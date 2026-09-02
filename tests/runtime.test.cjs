@@ -167,7 +167,8 @@ async function runtime(t, { supported = true, secure = true, storage = {} } = {}
     virtualConsole,
   });
   const { window } = dom;
-  const calls = { requestPort: 0, getPorts: 0, worker: 0, modals: 0, alerts: [], confirms: [] };
+  const calls = { requestPort: 0, getPorts: 0, worker: 0, workerTerminated: 0, modals: 0, alerts: [], confirms: [] };
+  const workers = [];
   const ports = [fakePort(window, 0), fakePort(window, 1)];
   const serial = new window.EventTarget();
   serial.nextPort = ports[0];
@@ -190,9 +191,9 @@ async function runtime(t, { supported = true, secure = true, storage = {} } = {}
   window.alert = (message) => { calls.alerts.push(String(message)); };
   window.confirm = (message) => { calls.confirms.push(String(message)); return true; };
   window.Worker = class {
-    constructor() { calls.worker += 1; }
+    constructor() { calls.worker += 1; workers.push(this); }
     postMessage() {}
-    terminate() {}
+    terminate() { calls.workerTerminated += 1; }
   };
   window.URL.createObjectURL = () => 'blob:runtime-test';
   window.URL.revokeObjectURL = () => {};
@@ -208,7 +209,7 @@ async function runtime(t, { supported = true, secure = true, storage = {} } = {}
     return element;
   };
   const env = {
-    window, dom, $, serial, ports, port: ports[0], calls, errors,
+    window, dom, $, serial, ports, port: ports[0], calls, workers, errors,
     click(id, force = false) {
       if (force) $(id).dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
       else $(id).click();
@@ -262,6 +263,18 @@ async function send(env, content) {
   await sleep(20);
 }
 
+const funsrState = (env) => env.$('funsr-speed-status').dataset.state;
+const dkpWrites = (env) => env.port.writes.filter((bytes) => new TextDecoder().decode(bytes).startsWith('DKP'));
+
+async function requestFunsr(env, value = 4.6) {
+  env.value('funsr-speed-value', value, 'input');
+  env.check('funsr-device-confirm', true);
+  const previous = env.port.writes.length;
+  env.click('funsr-speed-apply');
+  await until(() => env.port.writes.length === previous + 1, 'explicit DKP write completed');
+  await until(() => funsrState(env) === 'waiting', 'host write is awaiting a device ACK');
+}
+
 test('startup never enumerates, opens or writes remembered ports, even with saved repeat/reconnect flags', async (t) => {
   const env = await runtime(t, { storage: {
     [CONFIG_KEY]: savedConfig({ loopSend: true, loopSendTime: 100, sendContent: 'AT+RST', autoReconnect: true }),
@@ -279,19 +292,16 @@ test('startup never enumerates, opens or writes remembered ports, even with save
   assert.equal(env.$('serial-send').disabled, true);
 });
 
-test('unsupported browsers remain usable in demo mode without uncaught errors', async (t) => {
+test('unsupported browsers report the limitation without devices, synthetic traffic or uncaught errors', async (t) => {
   const env = await runtime(t, { supported: false });
   assert.equal(env.$('serial-select-port').disabled, true);
   assert.equal(env.$('serial-open-or-close').disabled, true);
-  assert.equal(env.$('serial-demo').disabled, false);
-  env.click('serial-demo');
-  await until(() => !env.$('demo-banner').hidden, 'demo enabled without Web Serial');
-  await until(() => env.rows().length > 0, 'demo produces logs');
-  env.value('serial-send-content', '안녕하세요', 'input');
-  env.click('serial-send');
-  await until(() => env.texts('tx').includes('안녕하세요'), 'demo accepts a virtual command');
-  env.click('serial-demo');
-  await until(() => env.$('demo-banner').hidden, 'demo disabled');
+  assert.match(env.$('serial-status').textContent, /Chrome|Edge|지원/);
+  assert.equal(env.window.document.getElementById('serial-demo'), null);
+  assert.equal(env.window.document.getElementById('demo-banner'), null);
+  assert.equal(env.$('funsr-speed-apply').disabled, true);
+  assert.equal(env.rows('rx').length, 0);
+  assert.equal(env.rows('tx').length, 0);
   assert.equal(env.calls.getPorts, 0);
   assert.equal(env.calls.requestPort, 0);
   assert.equal(env.port.calls.open, 0);
@@ -299,47 +309,17 @@ test('unsupported browsers remain usable in demo mode without uncaught errors', 
   assert.equal(env.$('serial-select-port').disabled, true);
 });
 
-test('insecure pages cannot access serial ports but can still start and stop demo', async (t) => {
+test('insecure pages cannot access serial ports or apply FUNSR settings', async (t) => {
   const env = await runtime(t, { secure: false });
   assert.match(env.$('serial-status').textContent, /HTTPS|localhost/);
   env.click('serial-select-port', true);
   assert.equal(env.calls.requestPort, 0);
-  env.click('serial-demo');
-  await until(() => !env.$('demo-banner').hidden, 'insecure demo enabled');
-  env.click('serial-demo');
-  await until(() => env.$('demo-banner').hidden, 'insecure demo disabled');
-  assert.equal(env.calls.getPorts, 0);
-  assert.equal(env.port.calls.open, 0);
-});
-
-test('demo remains isolated after selecting a real port and restores the selection on exit', async (t) => {
-  const env = await runtime(t);
-  env.click('serial-select-port');
-  await until(() => env.$('serial-status').dataset.state === 'selected', 'port selected');
-  env.click('serial-demo');
-  await until(() => !env.$('demo-banner').hidden, 'demo enabled');
-  env.value('serial-send-content', 'AT', 'input');
-  env.click('serial-send');
-  await until(() => env.rows('tx').length > 0, 'virtual send shown');
-  env.click('serial-demo');
-  await until(() => env.$('serial-status').dataset.state === 'selected', 'real selection restored');
-  assert.equal(env.calls.requestPort, 1);
+  env.check('funsr-device-confirm', true);
+  env.click('funsr-speed-apply', true);
+  assert.equal(env.$('funsr-speed-apply').disabled, true);
   assert.equal(env.calls.getPorts, 0);
   assert.equal(env.port.calls.open, 0);
   assert.equal(env.port.calls.write, 0);
-  assert.equal(env.$('serial-open-or-close').disabled, false);
-});
-
-test('demo renders Korean as UTF-8 and restores the selected hardware receive encoding on exit', async (t) => {
-  const env = await runtime(t, { storage: { [CONFIG_KEY]: savedConfig({ encoding: 'euc-kr' }) } });
-  env.click('serial-demo');
-  await until(() => env.texts('rx').includes('안녕하세요!'), 'demo Korean decoded correctly');
-  assert.equal(env.$('serial-encoding').value, 'utf-8');
-  assert.ok(!env.texts('rx').includes('\ufffd'));
-  env.click('serial-demo');
-  await until(() => env.$('demo-banner').hidden, 'demo finished');
-  assert.equal(env.$('serial-encoding').value, 'euc-kr');
-  assert.equal(JSON.parse(env.window.localStorage.getItem(CONFIG_KEY)).toolOptions.encoding, 'euc-kr');
 });
 
 test('explicit connect sends exact UTF-8 plus CRLF and closes only after read cancellation finishes', async (t) => {
@@ -369,20 +349,18 @@ test('explicit connect sends exact UTF-8 plus CRLF and closes only after read ca
   assert.equal(env.$('serial-select-port').disabled, false);
 });
 
-test('connected port selection and demo are guarded even for programmatically dispatched clicks', async (t) => {
+test('connected port selection remains guarded even for programmatically dispatched clicks', async (t) => {
   const env = await runtime(t);
   await selectAndOpen(env);
   env.serial.nextPort = env.ports[1];
   env.click('serial-select-port', true);
-  env.click('serial-demo', true);
   await sleep(35);
   assert.equal(env.calls.requestPort, 1);
   assert.equal(env.ports[1].calls.open, 0);
-  assert.equal(env.$('demo-banner').hidden, true);
   assert.equal(env.$('serial-status').dataset.state, 'connected');
 });
 
-test('pending connection prevents replacement, duplicate open and demo activation', async (t) => {
+test('pending connection prevents replacement and duplicate open', async (t) => {
   const env = await runtime(t);
   env.click('serial-select-port');
   await until(() => env.$('serial-status').dataset.state === 'selected', 'port selected');
@@ -393,11 +371,9 @@ test('pending connection prevents replacement, duplicate open and demo activatio
   env.serial.nextPort = env.ports[1];
   env.click('serial-select-port', true);
   env.click('serial-open-or-close', true);
-  env.click('serial-demo', true);
   assert.equal(env.calls.requestPort, 1);
   assert.equal(env.port.calls.open, 1);
   assert.equal(env.ports[1].calls.open, 0);
-  assert.equal(env.$('demo-banner').hidden, true);
   opening.resolve();
   await until(() => env.$('serial-status').dataset.state === 'connected', 'pending connection finished');
 });
@@ -690,17 +666,414 @@ test('legacy preferences migrate without deleting original keys or resuming old 
   assert.equal(env.port.calls.write, 0);
 });
 
-test('corrupt stored settings are preserved and do not break normal demo use', async (t) => {
+test('corrupt stored settings are preserved while explicit memory-port reception still works', async (t) => {
   const original = '{"broken":"keep this file"}';
   const env = await runtime(t, { storage: { [CONFIG_KEY]: original } });
   await until(() => env.texts('system').includes('기존 데이터'), 'corrupt-setting warning displayed');
   env.value('serial-send-content', '새 임시 입력', 'input');
   assert.equal(env.window.localStorage.getItem(CONFIG_KEY), original);
-  env.click('serial-demo');
-  await until(() => !env.$('demo-banner').hidden, 'demo still functional');
-  env.click('serial-demo');
-  await until(() => env.$('demo-banner').hidden, 'demo ends normally');
+  await selectAndOpen(env);
+  env.port.receive(encoder.encode('한글 수신 확인\r\n'));
+  await until(() => env.texts('rx').includes('한글 수신 확인'), 'memory-port RX still works');
   assert.equal(env.window.localStorage.getItem(CONFIG_KEY), original);
+  assert.equal(env.port.calls.open, 1);
+  assert.equal(env.port.calls.write, 0);
+});
+
+test('FUNSR draft slider, numeric field, increments and presets synchronize without saving or transmitting', async (t) => {
+  const original = savedConfig();
+  const env = await runtime(t, { storage: { [CONFIG_KEY]: original } });
+  const assertDraft = (value) => {
+    assert.equal(Number(env.$('funsr-speed-value').value), value);
+    assert.equal(Number(env.$('funsr-speed-range').value), value);
+    assert.equal(env.$('funsr-speed-command').textContent.trim(), `DKP${value.toFixed(1)}`);
+  };
+  assertDraft(1.2);
+  env.value('funsr-speed-range', 4.6, 'input');
+  assertDraft(4.6);
+  env.value('funsr-speed-value', 2.1, 'input');
+  assertDraft(2.1);
+  env.click('funsr-speed-increase');
+  assertDraft(2.2);
+  env.click('funsr-speed-decrease');
+  assertDraft(2.1);
+  env.click('funsr-speed-minimum');
+  assertDraft(0.5);
+  env.click('funsr-speed-decrease');
+  assertDraft(0.5);
+  env.click('funsr-speed-maximum');
+  assertDraft(5);
+  env.click('funsr-speed-increase');
+  assertDraft(5);
+  env.click('funsr-speed-default');
+  assertDraft(1.2);
+  assert.equal(env.window.localStorage.getItem(CONFIG_KEY), original, 'Draft state is not added to the backup schema');
+  assert.equal(env.calls.getPorts, 0);
+  assert.equal(env.calls.requestPort, 0);
+  assert.equal(env.port.calls.write, 0);
+
+  // Synthetic DOM events only: no OS keyboard, browser or real device is used.
+  await selectAndOpen(env);
+  env.check('funsr-device-confirm', true);
+  env.value('serial-send-content', 'old composer command', 'input');
+  const numeric = env.$('funsr-speed-value');
+  for (const ctrlKey of [false, true]) {
+    numeric.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey, bubbles: true }));
+  }
+  await sleep(35);
+  assert.equal(env.port.calls.write, 0, 'Editing FUNSR cannot send the general composer contents');
+});
+
+test('FUNSR apply requires an open port, explicit device confirmation and a valid 0.1-step draft', async (t) => {
+  const env = await runtime(t);
+  assert.equal(env.$('funsr-device-confirm').checked, false);
+  assert.equal(env.$('funsr-speed-apply').disabled, true);
+  env.check('funsr-device-confirm', true);
+  env.click('funsr-speed-apply', true);
+  assert.equal(env.port.calls.write, 0);
+  env.click('serial-select-port');
+  await until(() => env.$('serial-status').dataset.state === 'selected', 'port selected');
+  assert.equal(env.$('funsr-device-confirm').checked, false);
+  env.check('funsr-device-confirm', true);
+  env.click('funsr-speed-apply', true);
+  assert.equal(env.port.calls.write, 0, 'Selection is not an open serial connection');
+  env.click('serial-open-or-close');
+  await until(() => env.$('serial-status').dataset.state === 'connected', 'port opened');
+  assert.equal(env.$('funsr-device-confirm').checked, false, 'A new connection requires fresh confirmation');
+  env.click('funsr-speed-apply', true);
+  await sleep(20);
+  assert.equal(env.port.calls.write, 0);
+  env.check('funsr-device-confirm', true);
+  assert.equal(env.$('funsr-speed-apply').disabled, false);
+  for (const invalid of ['', '0.4', '5.1', '1.25']) {
+    env.value('funsr-speed-value', invalid, 'input');
+    assert.equal(env.$('funsr-speed-apply').disabled, true);
+    env.click('funsr-speed-apply', true);
+  }
+  await sleep(20);
+  assert.equal(env.port.calls.write, 0);
+  env.value('funsr-speed-value', '1.2', 'input');
+  assert.equal(env.$('funsr-speed-apply').disabled, false);
+  assert.match(env.$('funsr-speed-reported').textContent, /아직 확인하지 않음/);
+});
+
+test('FUNSR apply sends one exact DKP+CRLF independently of generic HEX, newline and merely armed repeat settings', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  env.check('serial-hex-send', true);
+  env.value('serial-line-ending', 'none');
+  env.value('serial-loop-send-time', 100);
+  env.check('serial-loop-send', true); // Armed is distinct from an active repeat loop.
+  env.value('serial-send-content', 'not valid HEX', 'input');
+  await requestFunsr(env, 4.6);
+  assert.deepEqual(env.port.writes, [Uint8Array.of(68, 75, 80, 52, 46, 54, 13, 10)]);
+  assert.equal(funsrState(env), 'waiting', 'Writer completion is not device save confirmation');
+  assert.match(env.$('funsr-speed-reported').textContent, /아직 확인하지 않음/);
+  assert.equal(env.$('serial-hex-send').checked, true);
+  assert.equal(env.$('serial-line-ending').value, 'none');
+  assert.equal(env.$('serial-send-content').value, 'not valid HEX');
+  await sleep(230);
+  assert.equal(env.port.calls.write, 1, 'Dedicated apply must never join the generic repeat sender');
+});
+
+test('FUNSR rejects duplicate clicks while the first write is still pending', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  env.value('funsr-speed-value', 4.6, 'input');
+  env.check('funsr-device-confirm', true);
+  const gate = deferred();
+  env.port.gates.write = gate;
+  env.click('funsr-speed-apply');
+  await until(() => env.port.calls.write === 1, 'DKP write pending');
+  env.click('funsr-speed-apply', true);
+  env.click('funsr-speed-apply', true);
+  assert.equal(env.$('funsr-speed-apply').disabled, true);
+  assert.equal(env.port.calls.write, 1);
+  gate.resolve();
+  await until(() => funsrState(env) === 'waiting', 'original write completed exactly once');
+  assert.equal(env.port.writes.length, 1);
+  assert.equal(env.port.calls.writerAcquire, 1);
+  assert.equal(env.port.calls.writerRelease, 1);
+});
+
+test('FUNSR apply is blocked during active repeating or a running user script, then reenabled after explicit stop', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  env.check('funsr-device-confirm', true);
+  env.value('serial-loop-send-time', 100);
+  env.value('serial-send-content', 'AT', 'input');
+  env.check('serial-loop-send', true);
+  env.click('serial-send');
+  await until(() => env.port.writes.length >= 1, 'generic loop started');
+  assert.equal(env.$('funsr-speed-apply').disabled, true);
+  env.click('funsr-speed-apply', true);
+  assert.equal(dkpWrites(env).length, 0);
+  env.click('serial-send');
+  await until(() => !env.$('funsr-speed-apply').disabled, 'DKP reenabled after stopping repeat');
+
+  env.click('serial-code-run');
+  await until(() => env.calls.worker === 1, 'stubbed user worker started');
+  assert.equal(env.$('funsr-speed-apply').disabled, true);
+  env.click('funsr-speed-apply', true);
+  assert.equal(dkpWrites(env).length, 0);
+  env.click('serial-code-run');
+  await until(() => env.calls.workerTerminated === 1 && !env.$('funsr-speed-apply').disabled, 'DKP reenabled after stopping worker');
+  await requestFunsr(env, 1.2);
+  assert.deepEqual(dkpWrites(env), [encoder.encode('DKP1.2\r\n')]);
+});
+
+test('FUNSR split RX ACK confirms the sent value, while boot reports remain separate from the edited draft', async (t) => {
+  const env = await runtime(t, { storage: { [CONFIG_KEY]: savedConfig({ timeOut: 0 }) } });
+  await selectAndOpen(env);
+  await requestFunsr(env, 4.6);
+  env.value('funsr-speed-value', 3.0, 'input');
+  for (const part of ['new k', 'p is 4.', '60!\r', '\n']) env.port.receive(encoder.encode(part));
+  await sleep(35);
+  assert.notEqual(funsrState(env), 'saved', 'A reported new value alone is not a save ACK');
+  // The save ACK and a partial boot line share one RX chunk. Finishing the ACK
+  // must not discard the parser's prefix for the subsequent boot report.
+  for (const part of ['kp sav', 'ed, please ', 'reboot!\r\nMotor global kp is 4.']) env.port.receive(encoder.encode(part));
+  await until(() => funsrState(env) === 'saved', 'matching value plus saved reply acknowledged');
+  assert.match(env.$('funsr-speed-status').textContent, /4\.60?/);
+  assert.match(env.$('funsr-speed-status').textContent, /재시작|재부팅/);
+  assert.match(env.$('funsr-speed-reported').textContent, /아직 확인하지 않음/);
+  assert.equal(Number(env.$('funsr-speed-value').value), 3.0);
+  for (const part of ['60\r', '\n']) env.port.receive(encoder.encode(part));
+  await until(() => /4\.60?/.test(env.$('funsr-speed-reported').textContent), 'boot output separately reported');
+  assert.equal(Number(env.$('funsr-speed-value').value), 3.0, 'Device report never rewrites the input draft');
+  assert.equal(env.port.calls.write, 1, 'No reboot, query or motion command is invented');
+});
+
+test('FUNSR wrong-value, reordered and stale pre-request replies cannot confirm a current request', async (t) => {
+  const env = await runtime(t, { storage: { [CONFIG_KEY]: savedConfig({ timeOut: 0 }) } });
+  await selectAndOpen(env);
+  env.port.receive(encoder.encode('new kp is 4.60!\r\nkp saved, please reboot!\r\n'));
+  await sleep(25);
+  await requestFunsr(env, 4.6);
+  env.port.receive(encoder.encode('kp saved, please reboot!\r\n'));
+  await sleep(25);
+  assert.notEqual(funsrState(env), 'saved');
+  // Cross the parser's per-push event cap: the final mismatching value must
+  // still invalidate all preceding matches before the saved line is handled.
+  env.port.receive(encoder.encode('new kp is 4.60!\r\n'.repeat(200) + 'new kp is 4.50!\r\nkp saved, please reboot!\r\n'));
+  await sleep(25);
+  assert.notEqual(funsrState(env), 'saved');
+  env.port.receive(encoder.encode('new kp is 4.60!\r\n'));
+  await sleep(25);
+  assert.notEqual(funsrState(env), 'saved', 'Earlier saved text cannot be reused for a later matching value');
+  env.port.receive(encoder.encode('kp saved, please reboot!\r\n'));
+  await until(() => funsrState(env) === 'saved', 'fresh correctly ordered matching ACK accepted');
+});
+
+test('FUNSR partial responses received before the request cannot be completed into a fresh ACK', async (t) => {
+  const env = await runtime(t, { storage: { [CONFIG_KEY]: savedConfig({ timeOut: 0 }) } });
+  await selectAndOpen(env);
+  env.port.receive(encoder.encode('new kp is 4.'));
+  await sleep(25);
+  await requestFunsr(env, 4.6);
+  env.port.receive(encoder.encode('60!\r\nkp saved, please reboot!\r\n'));
+  await sleep(35);
+  assert.notEqual(funsrState(env), 'saved');
+});
+
+test('FUNSR TX and script/system log text cannot impersonate RX ACKs or boot reports', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  const spoof = 'new kp is 4.60!\r\nkp saved, please reboot!\r\nMotor global kp is 4.60\r\n';
+  await send(env, spoof);
+  env.click('serial-code-run');
+  await until(() => env.workers.length === 1, 'stub worker available');
+  env.workers[0].onmessage({ data: { type: 'log', data: spoof } });
+  env.click('serial-code-run');
+  assert.match(env.$('funsr-speed-reported').textContent, /아직 확인하지 않음/);
+  await requestFunsr(env, 4.6);
+  env.port.receive(encoder.encode('kp saved, please reboot!\r\n'));
+  await sleep(35);
+  assert.notEqual(funsrState(env), 'saved');
+  assert.match(env.$('funsr-speed-reported').textContent, /아직 확인하지 않음/);
+});
+
+test('FUNSR disconnect before the queued write begins cancels it without a replay', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  env.value('funsr-speed-value', 4.6, 'input');
+  env.check('funsr-device-confirm', true);
+  env.click('funsr-speed-apply');
+  env.click('serial-open-or-close');
+  await until(() => !env.port.isOpen && env.port.calls.close === 1, 'close canceled queued DKP');
+  assert.equal(env.port.calls.write, 0);
+  assert.equal(env.$('funsr-device-confirm').checked, false);
+  assert.equal(funsrState(env), 'disconnected');
+  env.click('serial-open-or-close');
+  await until(() => env.port.isOpen && env.port.calls.open === 2, 'port reopened explicitly');
+  await sleep(35);
+  assert.equal(env.port.calls.write, 0);
+  assert.equal(env.$('funsr-device-confirm').checked, false);
+});
+
+test('FUNSR in-flight disconnect and same-port reconnect clear confirmation and stale request state without replay', async (t) => {
+  const env = await runtime(t);
+  env.check('serial-auto-reconnect', true);
+  await selectAndOpen(env);
+  env.value('funsr-speed-value', 4.6, 'input');
+  env.check('funsr-device-confirm', true);
+  const gate = deferred();
+  env.port.gates.write = gate;
+  env.click('funsr-speed-apply');
+  await until(() => env.port.calls.write === 1, 'DKP write in flight');
+  env.serial.emit('disconnect', env.port);
+  gate.resolve();
+  await until(() => !env.port.isOpen, 'in-flight disconnect completed');
+  assert.equal(env.$('funsr-device-confirm').checked, false);
+  env.serial.emit('connect', env.port);
+  await until(() => env.port.calls.open === 2 && env.$('serial-status').dataset.state === 'connected', 'same device reconnected');
+  assert.equal(env.$('funsr-device-confirm').checked, false);
+  env.port.receive(encoder.encode('new kp is 4.60!\r\nkp saved, please reboot!\r\n'));
+  await sleep(40);
+  assert.notEqual(funsrState(env), 'saved');
+  assert.equal(env.port.calls.write, 1, 'A new session never repeats a previous DKP request');
+  assert.equal(env.$('funsr-speed-apply').disabled, true);
+});
+
+test('FUNSR a rejected write releases its lock and cannot be changed into success by later ACK text', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  env.value('funsr-speed-value', 4.6, 'input');
+  env.check('funsr-device-confirm', true);
+  env.port.rejectWrite = new env.window.DOMException('simulated DKP write failure', 'NetworkError');
+  env.click('funsr-speed-apply');
+  await until(() => funsrState(env) === 'error', 'DKP write error surfaced');
+  assert.equal(env.port.writes.length, 0);
+  assert.equal(env.port.writable.locked, false);
+  assert.equal(env.port.calls.writerAcquire, env.port.calls.writerRelease);
+  env.port.receive(encoder.encode('new kp is 4.60!\r\nkp saved, please reboot!\r\n'));
+  await sleep(35);
+  assert.notEqual(funsrState(env), 'saved');
+});
+
+test('FUNSR drafts and confirmation are not restored or transmitted from imported configuration', async (t) => {
+  const env = await runtime(t);
+  const imported = savedConfig({ loopSend: true, autoReconnect: true, funsrKp: 4.6, funsrConfirmed: true }, { code: 'postMessage({ type: "uart_send_txt", data: "DKP4.6" });' });
+  env.file('serial-import-file', imported);
+  await until(() => env.calls.modals > 0, 'configuration import acknowledged');
+  assert.equal(Number(env.$('funsr-speed-value').value), 1.2);
+  assert.equal(env.$('funsr-device-confirm').checked, false);
+  assert.equal(env.calls.worker, 0);
+  assert.equal(env.calls.getPorts, 0);
   assert.equal(env.port.calls.open, 0);
   assert.equal(env.port.calls.write, 0);
+  const stored = JSON.parse(env.window.localStorage.getItem(CONFIG_KEY));
+  assert.equal(Object.hasOwn(stored.toolOptions, 'funsrKp'), false);
+  assert.equal(Object.hasOwn(stored.toolOptions, 'funsrConfirmed'), false);
+});
+
+test('FUNSR missing ACK reaches a finite unconfirmed-save state without retries or invented success', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  await requestFunsr(env, 4.6);
+  await until(() => funsrState(env) === 'unconfirmed-save', 'finite device ACK timeout', 12000);
+  assert.match(env.$('funsr-speed-status').textContent, /미확인|확인하지|확인되지/);
+  assert.equal(env.port.calls.write, 1);
+  assert.match(env.$('funsr-speed-reported').textContent, /아직 확인하지 않음/);
+  env.port.receive(encoder.encode('new kp is 4.60!\r\nkp saved, please reboot!\r\n'));
+  await sleep(35);
+  assert.notEqual(funsrState(env), 'saved', 'Expired requests cannot consume later stale ACK text');
+  assert.equal(env.port.calls.write, 1);
+});
+
+test('FUNSR ACK received before writer resolution cannot claim saved until that write completes', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  env.value('funsr-speed-value', 4.6, 'input');
+  env.check('funsr-device-confirm', true);
+  const gate = deferred();
+  env.port.gates.write = gate;
+  env.click('funsr-speed-apply');
+  await until(() => env.port.calls.write === 1, 'write has started but not resolved');
+  env.port.receive(encoder.encode('new kp is 4.60!\r\nkp saved, please reboot!\r\n'));
+  await sleep(40);
+  assert.equal(funsrState(env), 'sending');
+  assert.equal(env.port.writes.length, 0);
+  gate.resolve();
+  await until(() => funsrState(env) === 'saved', 'successful write now permits the already received matching ACK');
+  assert.deepEqual(env.port.writes, [encoder.encode('DKP4.6\r\n')]);
+});
+
+test('FUNSR an ACK followed by writer rejection remains an error, never a successful save', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  env.value('funsr-speed-value', 4.6, 'input');
+  env.check('funsr-device-confirm', true);
+  const gate = deferred();
+  env.port.gates.write = gate;
+  env.port.rejectWrite = new env.window.DOMException('failure after early response', 'NetworkError');
+  env.click('funsr-speed-apply');
+  await until(() => env.port.calls.write === 1, 'write awaiting resolution');
+  env.port.receive(encoder.encode('new kp is 4.60!\r\nkp saved, please reboot!\r\n'));
+  await sleep(35);
+  assert.equal(funsrState(env), 'sending');
+  gate.resolve();
+  await until(() => funsrState(env) === 'error', 'write failure takes precedence over early ACK flags');
+  assert.equal(env.port.writes.length, 0);
+  assert.equal(env.port.writable.locked, false);
+  assert.equal(env.port.calls.writerAcquire, env.port.calls.writerRelease);
+  assert.ok(!env.texts('system').includes('저장 응답을 확인했습니다.'));
+});
+
+test('FUNSR is blocked while another composer, repeat or worker write owns the writer', async (t) => {
+  for (const source of ['composer', 'repeat', 'worker']) {
+    await t.test(source, async (t) => {
+      const env = await runtime(t);
+      await selectAndOpen(env);
+      env.check('funsr-device-confirm', true);
+      const gate = deferred();
+      env.port.gates.write = gate;
+      if (source === 'worker') {
+        env.click('serial-code-run');
+        await until(() => env.workers.length === 1, 'stubbed worker started');
+        env.workers[0].onmessage({ data: { type: 'uart_send_txt', data: 'AT' } });
+      } else {
+        env.value('serial-send-content', 'AT', 'input');
+        if (source === 'repeat') env.check('serial-loop-send', true);
+        env.click('serial-send');
+      }
+      await until(() => env.port.calls.write === 1, `${source} write pending`);
+      if (source === 'worker') env.click('serial-code-run'); // Writer can outlive the stopped worker.
+      assert.equal(env.$('funsr-speed-apply').disabled, true);
+      env.click('funsr-speed-apply', true);
+      await sleep(20);
+      assert.equal(env.port.calls.write, 1);
+      assert.equal(dkpWrites(env).length, 0);
+      gate.resolve();
+      await until(() => env.port.writes.length === 1 && !env.port.writable.locked, `${source} write completed`);
+      if (source === 'repeat') {
+        await until(() => env.$('serial-send').textContent.includes('반복'), 'repeat activated only after its first write');
+        env.click('serial-send');
+      }
+      await until(() => !env.$('funsr-speed-apply').disabled, 'dedicated apply reenabled after other sender is stopped');
+      assert.equal(dkpWrites(env).length, 0, 'Reenabling never replays the rejected apply click');
+    });
+  }
+});
+
+test('FUNSR pending ACK blocks ordinary, quick, repeated and script senders until the request finishes', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  await requestFunsr(env, 4.6);
+  env.value('serial-send-content', 'AT', 'input');
+  env.click('serial-send', true);
+  const quick = env.$('serial-quick-send-content').querySelector('.quick-send');
+  quick.dispatchEvent(new env.window.MouseEvent('click', { bubbles: true }));
+  env.check('serial-loop-send', true);
+  env.click('serial-send', true);
+  env.click('serial-code-run', true);
+  await sleep(40);
+  assert.equal(env.port.calls.write, 1);
+  assert.equal(env.calls.worker, 0);
+  assert.equal(funsrState(env), 'waiting', 'Blocked senders cannot replace the current DKP request');
+  env.port.receive(encoder.encode('new kp is 4.60!\r\nkp saved, please reboot!\r\n'));
+  await until(() => funsrState(env) === 'saved', 'original DKP request confirmed');
+  await send(env, 'AT');
+  assert.equal(env.port.calls.write, 2);
+  assert.deepEqual(env.port.writes[1], encoder.encode('AT'));
 });

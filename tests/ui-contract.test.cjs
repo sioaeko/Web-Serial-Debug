@@ -93,7 +93,7 @@ async function fixture(t) {
 
 test('local Bootstrap switches all tool tabs and keeps panel targets and ARIA selection in sync', async (t) => {
   const { window, byId } = await fixture(t);
-  const tabs = ['nav-quick-send', 'nav-options', 'nav-code'].map((id) => ({
+  const tabs = ['nav-funsr', 'nav-quick-send', 'nav-options', 'nav-code'].map((id) => ({
     button: byId(`${id}-tab`), panel: byId(id),
   }));
   for (const { button, panel } of tabs) {
@@ -104,11 +104,13 @@ test('local Bootstrap switches all tool tabs and keeps panel targets and ARIA se
     assert.equal(panel.getAttribute('aria-labelledby'), button.id);
     assert.ok((button.getAttribute('aria-label') || button.textContent).trim(), 'Tab has an accessible name');
   }
-  // Cycle away from whichever tab is initially selected and return to it.
-  // Neither default selection nor heading/collapsible-body placement is fixed.
+  // Speed is the new default; the original three tabs and their accessible
+  // Bootstrap targets are preserved independently of heading/body placement.
   assert.equal(tabs.filter(({ button }) => button.classList.contains('active')).length, 1);
+  assert.equal(tabs[0].button.classList.contains('active'), true);
+  assert.equal(tabs[0].panel.classList.contains('show'), true);
   const initialIndex = tabs.findIndex(({ button }) => button.classList.contains('active'));
-  const cycle = [1, 2, 3].map((offset) => tabs[(initialIndex + offset) % tabs.length]);
+  const cycle = [1, 2, 3, 4].map((offset) => tabs[(initialIndex + offset) % tabs.length]);
   for (const selected of cycle) {
     const shown = nextEvent(selected.button, 'shown.bs.tab');
     selected.button.click();
@@ -197,4 +199,29 @@ test('each sidebar toggle closes and reopens only its own panel and stays outsid
     assert.equal(other.panel.classList.contains('show'), true);
     controls.forEach(({ button }) => assertToggleAvailable(button));
   }
+});
+
+test('FUNSR speed controls expose the documented draft range and explicit apply contract with no demo surface', async (t) => {
+  const { document, byId } = await fixture(t);
+  assert.equal(document.getElementById('serial-demo'), null);
+  assert.equal(document.getElementById('demo-banner'), null);
+  for (const [id, type] of [['funsr-speed-range', 'range'], ['funsr-speed-value', 'number']]) {
+    const input = byId(id);
+    assert.equal(input.type, type);
+    assert.equal(input.min, '0.5');
+    assert.equal(input.max, '5');
+    assert.equal(input.step, '0.1');
+    assert.equal(Number(input.value), 1.2);
+    assert.ok(input.labels.length || input.getAttribute('aria-label')?.trim(), `${id} has an accessible label`);
+  }
+  for (const id of ['funsr-speed-decrease', 'funsr-speed-increase', 'funsr-speed-minimum', 'funsr-speed-default', 'funsr-speed-maximum', 'funsr-speed-apply']) {
+    assert.equal(byId(id).type, 'button', 'Draft controls must not accidentally submit a form');
+  }
+  assert.equal(byId('funsr-speed-command').textContent.trim(), 'DKP1.2');
+  assert.equal(byId('funsr-device-confirm').type, 'checkbox');
+  assert.equal(byId('funsr-device-confirm').checked, false);
+  assert.equal(byId('funsr-speed-apply').disabled, true);
+  assert.equal(byId('funsr-speed-status').getAttribute('role'), 'status');
+  assert.equal(byId('funsr-speed-status').getAttribute('aria-live'), 'polite');
+  assert.match(byId('funsr-speed-reported').textContent, /아직 확인하지 않음/);
 });

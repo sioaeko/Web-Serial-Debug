@@ -19,6 +19,10 @@ const {
   formatBytes,
   formatTimestamp,
   addHistory,
+  validateFunsrKp,
+  formatFunsrKpCommand,
+  buildFunsrKpPayload,
+  createFunsrResponseParser,
 } = utils;
 
 function validConfig(overrides = {}) {
@@ -38,7 +42,7 @@ function historyEntry(content, overrides = {}) {
 
 test('the dependency-free bundle exposes the same browser and CommonJS API', () => {
   const source = fs.readFileSync(path.join(__dirname, '../js/serial-utils.js'), 'utf8');
-  const context = vm.createContext({ TextDecoder });
+  const context = vm.createContext({ TextDecoder, TextEncoder });
   vm.runInContext(source, context);
   assert.equal(typeof context.SerialUtils.parseHex, 'function');
   assert.equal(context.SerialUtils.bytesToHex(context.SerialUtils.parseHex('4869')), '48 69');
@@ -377,4 +381,86 @@ test('optional imported history is validated, normalized and bounded with the re
   for (const history of ['not-an-array', {}, Array(1), [null], [{ content: 'AT', hex: 'false' }], [historyEntry('AT', { lineEnding: 'bogus' })]]) {
     assert.throws(() => parseImportedConfig(validConfig({ history })), /전송 기록/);
   }
+});
+
+test('FUNSR Kp accepts the documented endpoints and all 0.1 UI steps without rounding to a different setting', () => {
+  for (let tenths = 5; tenths <= 50; tenths += 1) {
+    const value = tenths / 10;
+    assert.equal(validateFunsrKp(value), value);
+    assert.equal(validateFunsrKp(value.toFixed(1)), value);
+    assert.equal(formatFunsrKpCommand(value), `DKP${value.toFixed(1)}`);
+  }
+  assert.equal(validateFunsrKp('1.20'), 1.2);
+  assert.equal(validateFunsrKp(' 4.6 '), 4.6);
+  assert.equal(validateFunsrKp(1.1 + 0.1), 1.2);
+  assert.equal(formatFunsrKpCommand(5), 'DKP5.0');
+  assert.equal(formatFunsrKpCommand(0.5), 'DKP0.5');
+});
+
+test('FUNSR Kp rejects out-of-range, off-step, coerced and command-injection inputs', () => {
+  const invalid = [
+    0, 0.49, -1, 5.01, 5.1, 1.25, NaN, Infinity, -Infinity,
+    '', ' ', '1e0', '0x1', '4,6', 'DKP4.6', '4.6suffix', '4.6\r\nDAG10', '4.6\nDKP5.0',
+    '4.6; reboot', 'NaN', 'Infinity', '\u200b4.6', null, undefined, false, true,
+    [], [1.2], {}, { valueOf: () => 1.2 }, new Number(1.2),
+  ];
+  for (const value of invalid) {
+    for (const fn of [validateFunsrKp, formatFunsrKpCommand, buildFunsrKpPayload]) {
+      assert.throws(() => fn(value), `${fn.name} must reject ${String(value)}`);
+    }
+  }
+});
+
+test('FUNSR payload is exactly one ASCII DKP command and one CRLF, as documented', () => {
+  assert.deepEqual(buildFunsrKpPayload(4.6), Uint8Array.of(68, 75, 80, 52, 46, 54, 13, 10));
+  assert.equal(new TextDecoder().decode(buildFunsrKpPayload(1.2)), 'DKP1.2\r\n');
+  assert.equal(new TextDecoder().decode(buildFunsrKpPayload('5.0')), 'DKP5.0\r\n');
+  const mutable = buildFunsrKpPayload(1.2);
+  mutable[0] = 0;
+  assert.equal(new TextDecoder().decode(buildFunsrKpPayload(1.2)), 'DKP1.2\r\n');
+});
+
+test('FUNSR response parser joins split ASCII and CRLF packets for only the documented three message types', () => {
+  const parser = createFunsrResponseParser();
+  const events = [];
+  for (const piece of ['unrelated\r\n', 'new k', 'p is 4.60!\r', '\nkp sav', 'ed, please reboot!\r\n', 'Motor global kp is ', '4.60\r', '\n']) {
+    events.push(...parser.push(piece));
+  }
+  assert.deepEqual(events, [
+    { type: 'new-kp', value: 4.6 },
+    { type: 'saved' },
+    { type: 'boot', value: 4.6 },
+  ]);
+  const bytes = new TextEncoder().encode('Motor global kp is 1.20\r\n');
+  const byteEvents = [];
+  for (const byte of bytes) byteEvents.push(...parser.push(Uint8Array.of(byte)));
+  assert.deepEqual(byteEvents, [{ type: 'boot', value: 1.2 }]);
+});
+
+test('FUNSR response parser does not accept prefixed, suffixed or malformed lookalikes', () => {
+  const parser = createFunsrResponseParser();
+  const invalid = [
+    'TX new kp is 4.60!', '[system] kp saved, please reboot!',
+    'prefix Motor global kp is 4.60', 'new kp is 4.60! extra',
+    'kp saved, please reboot! extra', 'new kp is NaN!', 'Motor global kp is Infinity',
+    'new kp is 4.60', 'kp saved', 'Motor global kp is DKP4.6',
+  ];
+  assert.deepEqual(parser.push(invalid.join('\r\n') + '\r\n'), []);
+});
+
+test('FUNSR response parser discards oversized lines and recovers at the next line boundary', () => {
+  const parser = createFunsrResponseParser();
+  assert.deepEqual(parser.push('x'.repeat(600)), []);
+  assert.deepEqual(parser.push('new kp is 4.60!\r\n'), []);
+  assert.deepEqual(parser.push('x'.repeat(100000) + '\nMotor global kp is 4.60\r\n'), [{ type: 'boot', value: 4.6 }]);
+});
+
+test('FUNSR response parser reset discards old partial responses before a new request or session', () => {
+  const parser = createFunsrResponseParser();
+  assert.deepEqual(parser.push('new kp is '), []);
+  parser.reset();
+  assert.deepEqual(parser.push('4.60!\r\nkp saved, please reboot!\r\n'), [{ type: 'saved' }]);
+  assert.deepEqual(parser.push('Motor global kp is 4.'), []);
+  parser.reset();
+  assert.deepEqual(parser.push('60\r\n'), []);
 });

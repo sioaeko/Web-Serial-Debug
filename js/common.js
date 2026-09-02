@@ -1,6 +1,6 @@
 /* Web Serial Debug KR — based on itldg/web-serial-debug (Apache-2.0; see LICENSE).
  * KR modifications: Korean UI, validated persistence, explicit connections,
- * bounded logs, safe rendering, isolated demo, history and stream cleanup. */
+ * bounded logs, safe rendering, history, stream cleanup and FUNSR PRO DKP. */
 ;(function () {
     'use strict'
     const U = window.SerialUtils
@@ -19,6 +19,7 @@
     const MAX_SEND = 64 * 1024
     const MAX_FILE = 2 * 1024 * 1024
     const MAX_CODE = 256 * 1024
+    const FUNSR_ACK_TIMEOUT = 8000
     const encoder = new TextEncoder()
     const supported = Boolean(window.isSecureContext && navigator.serial)
     const hardwareFields = { baudRate: 'serial-baud', dataBits: 'serial-data-bits', stopBits: 'serial-stop-bits', parity: 'serial-parity', bufferSize: 'serial-buffer-size', flowControl: 'serial-flow-control' }
@@ -47,18 +48,19 @@
     let search = '', direction = 'all'
     let decoder = U.createTextStreamDecoder('utf-8'), rxParts = [], rxLength = 0, rxStart = 0, rxTimer = null
     let sessionStart = null, sessionElapsed = 0
-    let demo = false, demoSnapshot = null, demoInterval = null
-    const demoTimers = new Set()
     let loopTimer = null, loopActive = false, loopRecord = null, loopEpoch = 0, sending = false
     let historyCursor = -1, historyDraft = null, composing = false
     let worker = null, workerURL = null, workerWindow = 0, workerMessages = 0, workerBytes = 0
+    const funsrParser = U.createFunsrResponseParser()
+    let funsrDraft = 1.2, funsrLastDraft = 1.2, funsrDraftError = ''
+    let funsrConfirmed = false, funsrReported = null, funsrPending = null, funsrOutcome = null, funsrAckTimer = null
     const tipModal = window.bootstrap?.Modal && $('model-tip') ? new bootstrap.Modal($('model-tip')) : null
     const nameModal = window.bootstrap?.Modal && $('model-change-name') ? new bootstrap.Modal($('model-change-name')) : null
 
     function unsupportedText() {
         return window.isSecureContext
-            ? '실제 시리얼 연결은 데스크톱 Chrome·Edge에서 사용할 수 있습니다. 이 브라우저에서는 데모를 체험해 보세요.'
-            : '실제 연결에는 HTTPS 또는 localhost가 필요합니다. 지금은 데모를 체험할 수 있습니다.'
+            ? '이 브라우저는 시리얼 연결을 지원하지 않습니다. 실제 연결에는 데스크톱 Chrome·Edge를 사용해 주세요.'
+            : '시리얼 연결에는 HTTPS 또는 localhost가 필요합니다. 안전한 주소로 다시 접속해 주세요.'
     }
     function message(text, title = 'Web Serial Debug KR') {
         if (tipModal) {
@@ -187,10 +189,9 @@
         for (const [id, value] of Object.entries(checks)) if ($(id)) $(id).checked = Boolean(value)
         updateLogButtons(); applyTheme(); updateByteCount()
     }
-    function connected() { return opened || demo }
+    function connected() { return opened }
     function portInfo() {
-        if (demo) return '가상 ESP32 · 실제 장치에 접근하지 않습니다'
-        if (!port) return supported ? '아직 선택한 장치가 없습니다' : '실제 연결 미지원 · 데모 이용 가능'
+        if (!port) return supported ? '아직 선택한 장치가 없습니다' : '이 브라우저에서 시리얼 연결을 지원하지 않습니다'
         try {
             const info = port.getInfo()
             if (info.usbVendorId !== undefined) return 'USB ' + info.usbVendorId.toString(16).toUpperCase().padStart(4, '0') + ':' + (info.usbProductId || 0).toString(16).toUpperCase().padStart(4, '0') + ' · 선택한 장치'
@@ -199,26 +200,20 @@
     }
     function updateConnection() {
         const pending = busy || selecting
-        const state = demo ? 'demo' : pending ? 'busy' : opened ? 'connected' : !supported ? 'unsupported' : port ? 'selected' : 'disconnected'
+        const state = pending ? 'busy' : opened ? 'connected' : !supported ? 'unsupported' : port ? 'selected' : 'disconnected'
         if ($('serial-status')) { $('serial-status').textContent = statusText; $('serial-status').dataset.state = state }
-        if ($('serial-connection-label')) $('serial-connection-label').textContent = demo ? '데모 연결됨' : pending ? '연결 작업 중' : opened ? '연결됨' : closeFailed ? '연결 상태 확인 필요' : port ? '포트 선택됨' : '연결 안 됨'
+        if ($('serial-connection-label')) $('serial-connection-label').textContent = pending ? '연결 작업 중' : opened ? '연결됨' : closeFailed ? '연결 상태 확인 필요' : port ? '포트 선택됨' : '연결 안 됨'
         if ($('serial-port-info')) $('serial-port-info').textContent = portInfo()
-        if ($('serial-live-state')) { $('serial-live-state').textContent = paused ? '화면 일시정지' : demo ? '데모 실행 중' : opened ? '실시간 기록 중' : '연결 대기'; $('serial-live-state').dataset.state = state }
-        if ($('serial-select-port')) $('serial-select-port').disabled = !supported || demo || pending || opened || mayBeOpen
+        if ($('serial-live-state')) { $('serial-live-state').textContent = paused ? '화면 일시정지' : opened ? '실시간 기록 중' : '연결 대기'; $('serial-live-state').dataset.state = state }
+        if ($('serial-select-port')) $('serial-select-port').disabled = !supported || pending || opened || mayBeOpen
         if ($('serial-open-or-close')) {
-            $('serial-open-or-close').disabled = !supported || demo || pending || !port
+            $('serial-open-or-close').disabled = !supported || pending || !port
             buttonLabel('serial-open-or-close', busy ? '연결 처리 중…' : opened ? '연결 해제' : closeFailed ? '닫기 재시도' : '연결하기', opened ? 'bi-x-lg' : 'bi-plug')
             $('serial-open-or-close').setAttribute('aria-pressed', String(opened))
         }
-        if ($('serial-demo')) {
-            $('serial-demo').disabled = pending || opened || mayBeOpen
-            buttonLabel('serial-demo', demo ? '데모 종료' : '데모 체험', demo ? 'bi-stop-circle' : 'bi-play-circle')
-            $('serial-demo').setAttribute('aria-pressed', String(demo))
-        }
-        if ($('demo-banner')) $('demo-banner').hidden = !demo
-        for (const id of [...Object.values(hardwareFields), 'serial-preset']) if ($(id)) $(id).disabled = pending || opened || mayBeOpen || demo
-        if ($('serial-auto-reconnect')) $('serial-auto-reconnect').disabled = demo || !supported
-        document.querySelectorAll('.quick-send').forEach((button) => { button.disabled = !connected() || pending })
+        for (const id of [...Object.values(hardwareFields), 'serial-preset']) if ($(id)) $(id).disabled = pending || opened || mayBeOpen
+        if ($('serial-auto-reconnect')) $('serial-auto-reconnect').disabled = !supported
+        document.querySelectorAll('.quick-send').forEach((button) => { button.disabled = !connected() || pending || Boolean(funsrPending) })
         updateSendButton(); updateCounters()
     }
     function status(text) { statusText = text; updateConnection() }
@@ -274,7 +269,7 @@
     }
     function addEntry(kind, bytes, text) {
         const raw = bytes ? Uint8Array.from(bytes) : null, body = String(text ?? '').slice(0, MAX_SEND)
-        const entry = { id: nextId++, date: new Date(), direction: kind, bytes: raw, text: body, demo, weight: (raw?.byteLength || 0) + body.length * 2 + 160 }
+        const entry = { id: nextId++, date: new Date(), direction: kind, bytes: raw, text: body, weight: (raw?.byteLength || 0) + body.length * 2 + 160 }
         entries.push(entry); logBytes += entry.weight; trimLogs(); updateCounters(); renderSoon()
     }
     function systemLog(text) { addEntry('system', null, String(text)) }
@@ -292,7 +287,6 @@
     function logNode(entry) {
         const row = document.createElement('div'), time = document.createElement('span'), badge = document.createElement('span'), body = document.createElement('div')
         row.className = 'log-entry'; row.dataset.direction = entry.direction; row.dataset.logId = entry.id
-        if (entry.demo) row.dataset.demo = 'true'
         time.className = 'log-time'; time.textContent = U.formatTimestamp(entry.date); time.hidden = !prefs.showTime
         badge.className = 'log-direction'; badge.textContent = entry.direction === 'system' ? '안내' : entry.direction.toUpperCase()
         badge.setAttribute('aria-label', entry.direction === 'rx' ? '수신' : entry.direction === 'tx' ? '송신' : '시스템 안내')
@@ -335,7 +329,7 @@
             empty.hidden = visibleCount > 0
             const title = empty.querySelector('[data-empty-title], h2, h3, strong'), description = empty.querySelector('[data-empty-description], p')
             if (title) title.textContent = entries.length ? '일치하는 로그가 없습니다' : '아직 수신한 데이터가 없습니다'
-            if (description) description.textContent = entries.length ? '검색어나 송수신 필터를 바꿔 보세요.' : '포트를 연결하거나 데모를 시작해 보세요.'
+            if (description) description.textContent = entries.length ? '검색어나 송수신 필터를 바꿔 보세요.' : '포트를 선택하고 장치에 맞는 설정으로 연결해 주세요.'
         }
         if (prefs.autoScroll) logs.scrollTop = logs.scrollHeight
     }
@@ -363,6 +357,7 @@
     }
     function receiveData(data) {
         const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
+        receiveFunsr(bytes)
         rxCount += bytes.length
         for (let offset = 0; offset < bytes.length;) {
             if (!rxLength) rxStart = Date.now()
@@ -382,6 +377,139 @@
         decoder = U.createTextStreamDecoder(prefs.encoding)
     }
 
+    function updateFunsr() {
+        const apply = $('funsr-speed-apply'), statusNode = $('funsr-speed-status')
+        const hasDraft = funsrDraft !== null && !funsrDraftError
+        const blocked = loopActive || Boolean(worker) || sending || pendingWrites > 0
+        if ($('funsr-speed-command')) $('funsr-speed-command').textContent = hasDraft ? U.formatFunsrKpCommand(funsrDraft) : '설정값을 확인해 주세요'
+        if ($('funsr-speed-value')) {
+            $('funsr-speed-value').setAttribute('aria-invalid', String(!hasDraft))
+            $('funsr-speed-value').setCustomValidity(funsrDraftError)
+        }
+        if ($('funsr-device-confirm')) $('funsr-device-confirm').disabled = !opened || busy || selecting || Boolean(funsrPending)
+        if ($('funsr-speed-reported')) $('funsr-speed-reported').textContent = funsrReported === null ? '아직 확인하지 않음' : funsrReported.toFixed(2) + ' (부팅 보고)'
+        if (apply) {
+            apply.disabled = !supported || !opened || !port?.writable || busy || selecting || !hasDraft || !funsrConfirmed || blocked || Boolean(funsrPending)
+            apply.setAttribute('aria-busy', String(Boolean(funsrPending)))
+        }
+        // Hold unrelated senders only while this one request is being written
+        // or awaiting its bounded ACK window, avoiding ambiguous interleaving.
+        if ($('serial-loop-send')) $('serial-loop-send').disabled = Boolean(funsrPending)
+        if ($('serial-code-run')) $('serial-code-run').disabled = Boolean(funsrPending) && !worker
+        let state, text
+        if (funsrPending) {
+            state = funsrPending.written ? 'waiting' : 'sending'
+            text = funsrPending.command + (funsrPending.written ? ' 전송됨 · 저장 응답을 기다립니다. (최대 8초)' : ' 전송 중 · 기기 저장 여부는 아직 확인하지 않았습니다.')
+        } else if (!hasDraft) {
+            state = 'invalid'; text = funsrDraftError
+        } else if (!opened || busy || selecting) {
+            state = 'disconnected'; text = 'FUNSR PRO의 포트를 연결한 뒤 설정을 전송해 주세요.'
+        } else if (loopActive || worker) {
+            state = 'blocked'; text = '반복 전송과 사용자 스크립트를 먼저 중지해 주세요.'
+        } else if (sending || pendingWrites > 0) {
+            state = 'blocked'; text = '진행 중인 다른 전송이 끝난 뒤 설정을 전송해 주세요.'
+        } else if (!funsrConfirmed) {
+            state = 'unconfirmed'; text = '선택한 장치가 FUNSR PRO인지 직접 확인하고 체크해 주세요.'
+        } else if (funsrOutcome?.epoch === epoch) {
+            state = funsrOutcome.state; text = funsrOutcome.text
+        } else {
+            state = 'ready'; text = '보낼 값을 확인한 뒤 설정 전송을 누르세요. 한 번만 전송합니다.'
+        }
+        if (statusNode) { statusNode.dataset.state = state; statusNode.textContent = text }
+    }
+
+    function changeFunsrDraft(value, normalize = true) {
+        try {
+            funsrDraft = U.validateFunsrKp(value); funsrLastDraft = funsrDraft; funsrDraftError = ''
+            if ($('funsr-speed-range')) {
+                $('funsr-speed-range').value = funsrDraft.toFixed(1)
+                $('funsr-speed-range').setAttribute('aria-valuetext', funsrDraft.toFixed(1) + ' Kp')
+            }
+            if (normalize && $('funsr-speed-value')) $('funsr-speed-value').value = funsrDraft.toFixed(1)
+        } catch (error) {
+            funsrDraft = null; funsrDraftError = errorText(error)
+        }
+        updateFunsr()
+    }
+
+    function resetFunsrSession(reason = '') {
+        if (funsrPending && reason) systemLog(funsrPending.command + ' 응답 확인을 중단했습니다. ' + reason + ' 기기 저장 여부는 확인하지 못했습니다.')
+        clearTimeout(funsrAckTimer); funsrAckTimer = null
+        funsrPending = null; funsrOutcome = null; funsrReported = null; funsrConfirmed = false
+        funsrParser.reset()
+        if ($('funsr-device-confirm')) $('funsr-device-confirm').checked = false
+        updateFunsr()
+    }
+
+    function finishFunsr(request, state, text) {
+        if (funsrPending !== request || request.epoch !== epoch || request.port !== port || !opened) return
+        clearTimeout(funsrAckTimer); funsrAckTimer = null
+        funsrPending = null; funsrOutcome = { state, text, epoch }
+        // Keep a following, partially received boot line intact. A subsequent
+        // request or connection boundary resets the parser before ACK matching.
+        systemLog(text); updateConnection()
+    }
+
+    function confirmFunsrSaved(request) {
+        if (request.written && request.matchingValue && request.saved) {
+            finishFunsr(request, 'saved', request.command + ' 저장 응답을 확인했습니다. 기기를 직접 재시작하세요. 부팅 보고값은 별도로 확인합니다.')
+        }
+    }
+
+    function receiveFunsr(bytes) {
+        if (!opened) return
+        // Keep each parser batch below its event cap even when a serial driver
+        // delivers a very large read containing many short status lines.
+        for (let offset = 0; offset < bytes.length; offset += 1024) {
+            const events = funsrParser.push(bytes.subarray(offset, offset + 1024))
+            for (const event of events) {
+                if (event.type === 'boot') {
+                    if (funsrReported !== event.value) { funsrReported = event.value; updateFunsr() }
+                    continue
+                }
+                const request = funsrPending
+                if (!request || request.epoch !== epoch || request.port !== port || request.phase === 'queued') continue
+                if (event.type === 'new-kp') {
+                    request.matchingValue = Math.abs(event.value - request.value) < 1e-9
+                    request.saved = false
+                } else if (event.type === 'saved' && request.matchingValue) {
+                    request.saved = true
+                    confirmFunsrSaved(request)
+                }
+            }
+        }
+    }
+
+    async function applyFunsr() {
+        // A disabled button is presentation, not the safety boundary: enforce
+        // every guard again for synthetic events and concurrent UI changes.
+        if (funsrPending) return
+        changeFunsrDraft($('funsr-speed-value')?.value, true)
+        if (funsrDraft === null || !opened || !supported || !port?.writable || busy || selecting || !funsrConfirmed || !$('funsr-device-confirm')?.checked || loopActive || worker || sending || pendingWrites > 0) { updateFunsr(); return }
+        const request = {
+            epoch, port, value: funsrDraft, command: U.formatFunsrKpCommand(funsrDraft),
+            phase: 'queued', written: false, matchingValue: false, saved: false,
+        }
+        funsrPending = request; funsrOutcome = null
+        // Old complete lines and old partial prefixes cannot become this
+        // request's ACK. Reset once now, and again exactly at write dispatch.
+        funsrParser.reset(); updateConnection()
+        try {
+            await transmit(U.buildFunsrKpPayload(request.value), request)
+            if (funsrPending !== request || request.epoch !== epoch || request.port !== port || !opened) return
+            request.written = true; request.phase = 'written'
+            remember({ content: request.command, hex: false, lineEnding: 'crlf' })
+            confirmFunsrSaved(request)
+            if (funsrPending !== request) return
+            funsrAckTimer = setTimeout(() => {
+                finishFunsr(request, 'unconfirmed-save', request.command + ' 전송됨, 저장 응답 미확인. 자동 재전송하지 않습니다. 장치와 수신 로그를 확인해 주세요.')
+            }, FUNSR_ACK_TIMEOUT)
+            updateFunsr()
+        } catch (error) {
+            finishFunsr(request, 'error', request.command + ' 전송을 완료하지 못했습니다. 기기 저장 여부는 확인하지 못했습니다. ' + errorText(error))
+        }
+    }
+
     async function readSerial(selectedPort, token) {
         while (opened && epoch === token && selectedPort.readable) {
             const localReader = selectedPort.readable.getReader()
@@ -399,12 +527,12 @@
         }
     }
     async function openSerial(automatic = false) {
-        if (demo || busy || selecting || opened || !supported) return
+        if (busy || selecting || opened || !supported) return
         if (!port) { message('먼저 연결할 포트를 선택해 주세요.'); return }
         if (automatic && (!reconnectArmed || !prefs.autoReconnect)) return
         try { options = readOptions() } catch (error) { message(errorText(error), '연결 설정 확인'); return }
         const selectedPort = port
-        busy = true; closeFailed = false
+        busy = true; closeFailed = false; resetFunsrSession()
         status(automatic ? '선택했던 장치에 다시 연결하는 중입니다…' : '포트 연결을 여는 중입니다…')
         try {
             await selectedPort.open(options)
@@ -438,7 +566,7 @@
         if (manual) { reconnectArmed = false; manuallyClosed = true }
         if (closeTask) return closeTask
         const selectedPort = port, wasOpen = opened || mayBeOpen
-        opened = false; epoch++; stopLoop(); stopWorker(); busy = true
+        opened = false; epoch++; resetFunsrSession('포트 연결이 종료되었습니다.'); stopLoop(); stopWorker(); busy = true
         status('연결과 데이터 스트림을 정리하는 중입니다…')
         closeTask = (async () => {
             try {
@@ -465,8 +593,8 @@
         return closeTask
     }
     async function selectPort() {
-        if (!supported || demo || busy || selecting || opened || mayBeOpen) return
-        selecting = true; reconnectArmed = false; manuallyClosed = true; updateConnection()
+        if (!supported || busy || selecting || opened || mayBeOpen) return
+        selecting = true; reconnectArmed = false; manuallyClosed = true; resetFunsrSession(); updateConnection()
         try {
             // Only a direct click can reach requestPort; never auto-select a
             // remembered device or replace one from a global connect event.
@@ -483,16 +611,16 @@
     function eventPort(event) { return event.port || (event.target !== navigator.serial ? event.target : null) }
     if (supported) {
         navigator.serial.addEventListener('disconnect', (event) => {
-            if (demo || eventPort(event) !== port) return
+            if (eventPort(event) !== port) return
             if (opened || mayBeOpen) { reconnectArmed = !manuallyClosed && Boolean(prefs.autoReconnect); void closeSerial(false) }
             else status('선택한 장치가 분리되었습니다.')
         })
         navigator.serial.addEventListener('connect', async (event) => {
             // Same-object equality is intentional. A VID/PID match may refer
             // to a different physical device and must not authorize a switch.
-            if (demo || eventPort(event) !== port || !reconnectArmed || !prefs.autoReconnect) return
+            if (eventPort(event) !== port || !reconnectArmed || !prefs.autoReconnect) return
             if (closeTask) await closeTask
-            if (!demo && reconnectArmed && prefs.autoReconnect && !closeFailed) await openSerial(true)
+            if (reconnectArmed && prefs.autoReconnect && !closeFailed) await openSerial(true)
         })
     }
     function sendRecord(content, hex, lineEnding) {
@@ -519,46 +647,41 @@
         const button = $('serial-send')
         if (!button) return
         const invalid = $('serial-send-content')?.getAttribute('aria-invalid') === 'true'
-        button.disabled = !connected() || busy || selecting || sending || (invalid && !loopActive)
+        button.disabled = !connected() || busy || selecting || sending || Boolean(funsrPending) || (invalid && !loopActive)
         buttonLabel('serial-send', loopActive ? '반복 전송 중지' : sending ? '전송 중…' : '전송', loopActive ? 'bi-stop' : 'bi-arrow-up-right', loopActive || sending ? '' : 'Ctrl ↵')
         button.title = loopActive ? '진행 중인 반복 전송을 멈춥니다' : 'Ctrl/Cmd + Enter로 전송'
+        updateFunsr()
     }
     function remember(record) {
         history = normalizedHistory([{ content: record.content, hex: record.hex, lineEnding: record.lineEnding, time: new Date().toISOString() }, ...history])
         if (!historyBlocked) writeStorage(HISTORY_KEY, JSON.stringify(history))
         historyCursor = -1; historyDraft = null; renderHistory()
     }
-    function transmit(data) {
+    function transmit(data, funsrRequest = null) {
         if (!(data instanceof Uint8Array) || !data.length || data.length > MAX_SEND) return Promise.reject(new Error('전송 데이터는 1~65,536 바이트여야 합니다.'))
-        if (!connected() || busy) return Promise.reject(new Error('포트 연결을 열거나 데모를 시작한 뒤 전송해 주세요.'))
+        if (!connected() || busy) return Promise.reject(new Error('포트를 연결한 뒤 전송해 주세요.'))
+        if (funsrPending && funsrRequest !== funsrPending) return Promise.reject(new Error('FUNSR PRO 저장 응답을 확인하는 동안 다른 전송은 잠시 기다려 주세요.'))
         if (pendingWrites >= 64) return Promise.reject(new Error('대기 중인 전송이 너무 많습니다. 전송 주기를 늘려 주세요.'))
-        const payload = data.slice(), token = epoch, wasDemo = demo, selectedPort = port
-        pendingWrites++
+        const payload = data.slice(), token = epoch, selectedPort = port
+        pendingWrites++; updateFunsr()
         const task = writeTail.then(async () => {
-            if (epoch !== token || wasDemo !== demo || !connected() || busy) throw new Error('연결 상태가 바뀌어 대기 중인 전송을 취소했습니다.')
-            if (wasDemo) {
-                txCount += payload.length; addBytes(payload, 'tx')
-                const timer = setTimeout(() => {
-                    demoTimers.delete(timer)
-                    if (!demo || epoch !== token) return
-                    const text = new TextDecoder().decode(payload).trim()
-                    const reply = text === 'AT' ? 'OK\r\n' : text === 'AT+GMR' ? 'AT version: 3.2.0 (데모)\r\nOK\r\n' : '데모 응답: ' + text + '\r\n'
-                    receiveData(encoder.encode(reply))
-                }, 150)
-                demoTimers.add(timer)
-                return
-            }
+            if (epoch !== token || !connected() || busy) throw new Error('연결 상태가 바뀌어 대기 중인 전송을 취소했습니다.')
+            if (funsrPending && funsrRequest !== funsrPending) throw new Error('FUNSR PRO 설정 전송과 다른 전송을 동시에 실행할 수 없습니다.')
+            if (funsrRequest && (funsrPending !== funsrRequest || funsrRequest.epoch !== epoch || funsrRequest.port !== port || !funsrConfirmed || !$('funsr-device-confirm')?.checked || loopActive || worker)) throw new Error('FUNSR PRO 연결 확인 또는 실행 상태가 바뀌어 전송을 취소했습니다.')
             if (!selectedPort?.writable) throw new Error('포트 전송 스트림을 사용할 수 없습니다. 다시 연결해 주세요.')
             const writer = selectedPort.writable.getWriter()
             activeWriter = writer
-            try { await writer.write(payload); txCount += payload.length; addBytes(payload, 'tx') }
+            try {
+                if (funsrRequest) { funsrParser.reset(); funsrRequest.phase = 'writing' }
+                await writer.write(payload); txCount += payload.length; addBytes(payload, 'tx')
+            }
             finally { writer.releaseLock(); if (activeWriter === writer) activeWriter = null }
         })
-        writeTail = task.catch(() => {}).finally(() => { pendingWrites--; updateCounters() })
+        writeTail = task.catch(() => {}).finally(() => { pendingWrites--; updateCounters(); updateFunsr() })
         return task
     }
     function confirmCommand(record) {
-        const risky = !record.hex && !demo && /(?:^|[\r\n])\s*(?:AT\+(?:RESTORE|RST|GSLP|UART_DEF|SYSFLASH|SYSMFG|SAVETRANSLINK)(?:=|\s*$)|AT\+(?:CIUPDATE|CIPUPDATE))/i.test(record.content)
+        const risky = !record.hex && /(?:^|[\r\n])\s*(?:AT\+(?:RESTORE|RST|GSLP|UART_DEF|SYSFLASH|SYSMFG|SAVETRANSLINK)(?:=|\s*$)|AT\+(?:CIUPDATE|CIPUPDATE))/i.test(record.content)
         return !risky || window.confirm('이 명령은 장치를 재시작하거나 설정·플래시 데이터를 변경할 수 있습니다. 장치 문서를 확인한 명령만 전송해 주세요. 계속할까요?')
     }
     async function sendComposer() {
@@ -594,38 +717,6 @@
         logs.replaceChildren(); visibleCount = 0; renderedId = 0
         if ($('serial-empty-state')) $('serial-empty-state').hidden = false
         updateCounters(); if (!paused) renderLogs()
-    }
-    function startDemo() {
-        if (demo || opened || mayBeOpen || busy || selecting) return
-        stopLoop(); stopWorker(); flushReceive()
-        demoSnapshot = { entries, logBytes, rxCount, txCount, sessionStart, sessionElapsed, statusText, paused, encoding: prefs.encoding }
-        entries = []; logBytes = 0; rxCount = 0; txCount = 0; paused = false; demo = true; reconnectArmed = false; epoch++
-        prefs.encoding = 'utf-8'; if ($('serial-encoding')) $('serial-encoding').value = 'utf-8'
-        resetDecoder(false); startSession(); fullRender = true; renderedId = 0; updateLogButtons()
-        status('가상 ESP32에 연결했습니다. 실제 포트에 접근하지 않는 안전한 데모입니다.')
-        systemLog('데모 시작 · 아래 데이터는 브라우저 안에서 생성됩니다. 실제 장치로 전송되지 않습니다.')
-        const command = encoder.encode('AT\r\n'); txCount += command.length; addBytes(command, 'tx')
-        for (const text of ['ESP32 boot: ready\r\n', '안녕하세요! 시리얼 디버그 준비 완료\r\n', 'OK\r\n']) { receiveData(encoder.encode(text)); flushReceive() }
-        let tick = 0
-        demoInterval = setInterval(() => {
-            if (!demo) return
-            tick++
-            receiveData(encoder.encode('상태 정상 · 온도 ' + (24.5 + tick % 5 / 10).toFixed(1) + ' °C · 가동 ' + tick * 5 + '초\r\n'))
-        }, 5000)
-        renderSoon(true); updateConnection()
-    }
-    function stopDemo() {
-        if (!demo) return
-        epoch++; stopLoop(); stopWorker(); clearInterval(demoInterval); demoInterval = null
-        for (const timer of demoTimers) clearTimeout(timer)
-        demoTimers.clear(); clearTimeout(rxTimer); rxTimer = null; rxParts = []; rxLength = 0; rxStart = 0; demo = false
-        if (demoSnapshot) {
-            entries = demoSnapshot.entries; logBytes = demoSnapshot.logBytes; rxCount = demoSnapshot.rxCount; txCount = demoSnapshot.txCount
-            sessionStart = demoSnapshot.sessionStart; sessionElapsed = demoSnapshot.sessionElapsed; statusText = demoSnapshot.statusText; paused = demoSnapshot.paused
-            prefs.encoding = demoSnapshot.encoding; if ($('serial-encoding')) $('serial-encoding').value = prefs.encoding
-        }
-        demoSnapshot = null; resetDecoder(false); fullRender = true; updateLogButtons()
-        renderLogs(); updateConnection(); saveConfig()
     }
     function renderHistory() {
         const select = $('serial-history')
@@ -670,7 +761,7 @@
             const input = document.createElement('input'); input.type = 'text'; input.className = 'form-control form-control-sm'; input.value = item.content; input.maxLength = MAX_SEND
             input.placeholder = '명령 내용 · 더블클릭으로 이름 변경'; input.title = '내용을 편집합니다. 이름은 더블클릭으로 바꿀 수 있습니다.'; input.setAttribute('aria-label', item.name + ' 명령 내용')
             const load = quickButton('담기', 'quick-load', item.name + ' 명령을 입력창에 담기 (전송하지 않음)')
-            const send = quickButton(item.name, 'quick-send', item.name + ' 명령 전송'); send.disabled = !connected() || busy
+            const send = quickButton(item.name, 'quick-send', item.name + ' 명령 전송'); send.disabled = !connected() || busy || Boolean(funsrPending)
             const label = document.createElement('label'); label.className = 'quick-label'
             const hex = document.createElement('input'); hex.type = 'checkbox'; hex.className = 'form-check-input'; hex.checked = item.hex; hex.setAttribute('aria-label', item.name + ' 명령을 HEX로 전송')
             const labelText = document.createElement('span'); labelText.textContent = 'HEX'; label.append(hex, labelText)
@@ -767,6 +858,7 @@
         else if ($('serial-code-content')) $('serial-code-content').readOnly = false
         if ($('serial-code-run')) { buttonLabel('serial-code-run', '실행', 'bi-play'); $('serial-code-run').setAttribute('aria-pressed', 'false') }
         if ($('serial-code-load')) $('serial-code-load').disabled = false
+        updateFunsr()
     }
     function workerData(value) {
         if (value instanceof ArrayBuffer) value = new Uint8Array(value)
@@ -797,6 +889,7 @@
     }
     function runWorker() {
         if (worker) { stopWorker(); systemLog('스크립트를 중지했습니다.'); return }
+        if (funsrPending) { message('FUNSR PRO 저장 응답 확인이 끝난 뒤 스크립트를 실행해 주세요.'); return }
         const value = currentCode()
         if (!value.trim()) { message('실행할 스크립트를 입력해 주세요.'); return }
         if (value.length > MAX_CODE) { message('스크립트는 262,144자 이하여야 합니다.'); return }
@@ -819,18 +912,19 @@
             buttonLabel('serial-code-run', '중지', 'bi-stop'); $('serial-code-run').setAttribute('aria-pressed', 'true')
             if ($('serial-code-load')) $('serial-code-load').disabled = true
             systemLog('스크립트를 실행했습니다. 탭이 숨겨지면 브라우저가 타이머를 늦출 수 있습니다.')
+            updateFunsr()
         } catch (error) { stopWorker(); systemLog('스크립트를 실행하지 못했습니다. ' + errorText(error)) }
     }
     function applyImport(value) {
         stopLoop(); stopWorker(); options = value.serialOptions; prefs = value.toolOptions; prefs.loopSend = false; groups = value.quickSendList; validGroups = structuredClone(groups); replaceCode(value.code)
         if (value.history) { history = normalizedHistory(value.history); historyBlocked = false; writeStorage(HISTORY_KEY, JSON.stringify(history)) }
-        configBlocked = false; reconnectArmed = false
+        configBlocked = false; reconnectArmed = false; resetFunsrSession()
         applyHardware(); applyPreferences(); resetDecoder(); renderQuick(); renderHistory(); trimLogs(); saveConfig()
         writeStorage(THEME_KEY, document.documentElement.dataset.theme); renderSoon(true); updateConnection()
     }
 
     // Loading preferences never opens a port, starts a worker or starts a sender.
-    loadConfig(); validGroups = structuredClone(groups); applyHardware(); applyPreferences(); setupEditor(); renderQuick(); renderHistory(); updateConnection()
+    loadConfig(); validGroups = structuredClone(groups); applyHardware(); applyPreferences(); setupEditor(); renderQuick(); renderHistory(); resetFunsrSession(); changeFunsrDraft(1.2); updateConnection()
     ready = true
     for (const text of startupWarnings) systemLog(text)
     renderSoon(true)
@@ -838,11 +932,27 @@
 
     on('serial-select-port', 'click', () => { void selectPort() })
     on('serial-open-or-close', 'click', () => {
-        if (demo || busy) return
+        if (busy) return
         if (opened || mayBeOpen || closeFailed) void closeSerial(true)
         else void openSerial(false)
     })
-    on('serial-demo', 'click', () => { if (demo) stopDemo(); else startDemo() })
+    on('funsr-speed-range', 'input', (event) => changeFunsrDraft(event.target.value))
+    on('funsr-speed-range', 'change', (event) => changeFunsrDraft(event.target.value))
+    on('funsr-speed-value', 'input', (event) => changeFunsrDraft(event.target.value, false))
+    on('funsr-speed-value', 'change', (event) => changeFunsrDraft(event.target.value))
+    on('funsr-speed-decrease', 'click', () => changeFunsrDraft(Math.max(0.5, (Math.round(funsrLastDraft * 10) - 1) / 10)))
+    on('funsr-speed-increase', 'click', () => changeFunsrDraft(Math.min(5, (Math.round(funsrLastDraft * 10) + 1) / 10)))
+    on('funsr-speed-minimum', 'click', () => changeFunsrDraft(0.5))
+    on('funsr-speed-default', 'click', () => changeFunsrDraft(1.2))
+    on('funsr-speed-maximum', 'click', () => changeFunsrDraft(5))
+    on('funsr-device-confirm', 'change', (event) => {
+        funsrConfirmed = Boolean(event.target.checked && opened && !busy && !selecting)
+        event.target.checked = funsrConfirmed; updateFunsr()
+    })
+    on('funsr-speed-apply', 'click', () => { void applyFunsr() })
+    for (const id of ['funsr-speed-range', 'funsr-speed-value']) on(id, 'keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation() }
+    })
     on('serial-send', 'click', () => { void sendComposer() })
     on('serial-clear', 'click', () => clearLogs())
     on('serial-copy', 'click', () => { void copyLogs() })
@@ -868,7 +978,7 @@
         systemLog('이후 수신 문자의 인코딩을 ' + prefs.encoding.toUpperCase() + '(으)로 변경했습니다. 텍스트 전송은 UTF-8입니다.')
     })
     for (const id of Object.values(hardwareFields)) on(id, 'change', () => {
-        if (opened || busy || demo || mayBeOpen) return
+        if (opened || busy || mayBeOpen) return
         try { options = readOptions(); setPref('preset', 'custom'); if ($('serial-preset')) $('serial-preset').value = 'custom'; saveConfig() }
         catch (error) { message(errorText(error), '연결 설정 확인') }
     })
@@ -976,27 +1086,27 @@
     })
     on('serial-export', 'click', () => {
         try {
-            if (!opened && !demo) options = readOptions()
+            if (!opened) options = readOptions()
             code = currentCode(); const value = envelope(true); U.parseImportedConfig(value)
             downloadJSON(value, 'web-serial-debug-kr-config.json')
         } catch (error) { message('설정을 내보내지 못했습니다. ' + errorText(error)) }
     })
     on('serial-import', 'click', () => {
-        if (connected() || mayBeOpen || busy) { message('실제 연결 또는 데모를 종료한 뒤 설정을 가져와 주세요.'); return }
+        if (connected() || mayBeOpen || busy) { message('포트 연결을 해제한 뒤 설정을 가져와 주세요.'); return }
         $('serial-import-file').click()
     })
     on('serial-import-file', 'change', async (event) => {
         try {
             const text = await readFile(event.target)
             if (text === null) return
-            if (connected() || mayBeOpen || busy) throw new Error('먼저 실제 연결 또는 데모를 종료해 주세요.')
+            if (connected() || mayBeOpen || busy) throw new Error('먼저 포트 연결을 해제해 주세요.')
             const value = U.parseImportedConfig(JSON.parse(text))
             if (!window.confirm('현재 연결 설정·빠른 명령·스크립트를 가져온 설정으로 바꿀까요?' + (value.history ? ' 전송 기록도 교체됩니다.' : '') + ' 가져온 스크립트는 실행하지 않습니다.')) return
             applyImport(value); message('설정을 가져왔습니다. 포트 연결·전송·스크립트는 직접 실행할 때만 시작합니다.')
         } catch (error) { message('설정 가져오기에 실패했습니다. 기존 설정은 유지됩니다. ' + errorText(error)) }
     })
     on('serial-reset', 'click', () => {
-        if (connected() || mayBeOpen || busy) { message('실제 연결 또는 데모를 종료한 뒤 초기화해 주세요.'); return }
+        if (connected() || mayBeOpen || busy) { message('포트 연결을 해제한 뒤 초기화해 주세요.'); return }
         if (!window.confirm('이 페이지의 연결·도구 설정, 빠른 명령, 스크립트, 전송 기록을 초기화할까요? 현재 로그와 이전 버전의 원본 저장 데이터는 유지됩니다.')) return
         historyBlocked = false
         applyImport({ serialOptions: U.validateSerialOptions({}), toolOptions: U.normalizeToolOptions({}), quickSendList: structuredClone(defaultQuick), code: defaultCode, history: [] })
@@ -1025,10 +1135,9 @@
     on('model-change-name', 'shown.bs.modal', () => { $('model-new-name').focus(); $('model-new-name').select() })
     $('model-change-name')?.querySelector('form')?.addEventListener('submit', (event) => event.preventDefault())
     window.addEventListener('pagehide', () => {
-        if (demo) stopDemo()
+        resetFunsrSession('페이지가 닫히거나 이동했습니다.')
         stopLoop(); stopWorker(); clearInterval(counterTimer)
-        for (const timer of demoTimers) clearTimeout(timer)
-        clearInterval(demoInterval); clearTimeout(rxTimer)
+        clearTimeout(rxTimer)
         if (opened || mayBeOpen) void closeSerial(true)
     })
     window.addEventListener('pageshow', (event) => {

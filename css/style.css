@@ -347,17 +347,6 @@ kbd {
     gap: 4px;
     margin-left: auto;
 }
-.demo-action {
-    border-color: var(--border-strong);
-    color: var(--text);
-    background: var(--surface-soft);
-    font-size: 12px;
-    min-height: 28px;
-    padding: 2px 10px;
-    margin-right: 4px;
-}
-.demo-action .bi { color: var(--accent); }
-
 .github-link {
     color: var(--muted);
     font-size: 12px;
@@ -368,17 +357,6 @@ kbd {
 .github-link:hover { color: var(--text); text-decoration: none; }
 .github-link > .bi:first-child { font-size: 14px; }
 .external-arrow { font-size: 11px; color: var(--subtle); }
-
-.demo-banner {
-    flex: 0 0 auto;
-    padding: 5px 16px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--warning);
-    background: var(--warning-soft);
-    border-bottom: 1px solid color-mix(in srgb, var(--warning) 25%, var(--border));
-    text-align: center;
-}
 
 /* ==========================================================================
    Integrated Workspace Layout (Unified Workbench)
@@ -1087,15 +1065,20 @@ summary::-webkit-details-marker { display: none; }
 .tools-heading .tool-tabs {
     padding: 0;
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: flex-end;
     background: transparent;
     border-bottom: 0;
     height: 100%;
 }
+.tools-heading .toggle-button {
+    flex-shrink: 0;
+    margin-left: 4px;
+}
 .nav-tabs {
     border-bottom: 0;
-    gap: 14px;
+    gap: 10px;
     flex-wrap: nowrap;
     height: 100%;
 }
@@ -1110,6 +1093,7 @@ summary::-webkit-details-marker { display: none; }
     background: transparent;
     padding: 8px 2px 7px;
     margin-bottom: -1px;
+    flex-shrink: 0;
 }
 .nav-tabs .nav-link:hover { color: var(--text); border-color: transparent; }
 .nav-tabs .nav-link.active {
@@ -1134,6 +1118,251 @@ summary::-webkit-details-marker { display: none; }
 }
 .tab-pane { outline-offset: -2px !important; }
 .tab-pane.fade { transition: opacity .12s ease; }
+
+/* ==========================================================================
+   FUNSR PRO Speed Settings Tab
+   ========================================================================== */
+
+.funsr-label-row,
+.funsr-preview-row,
+.funsr-reported-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.funsr-label-row .field-label,
+.funsr-preview-row .field-label,
+.funsr-reported-row .field-label {
+    margin: 0;
+}
+
+.funsr-unit-note,
+.funsr-preview-mode,
+.funsr-reported-note {
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.funsr-input-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.funsr-number-input {
+    flex: 1;
+    min-width: 70px;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.funsr-step-buttons {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.funsr-step-btn {
+    min-width: 44px;
+    min-height: 33px;
+    font-size: 12.5px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    padding: 4px 8px;
+}
+
+.funsr-range-wrap {
+    margin: 8px 0 6px;
+    display: flex;
+    align-items: center;
+}
+
+.funsr-range-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 24px;
+    background: transparent;
+    cursor: pointer;
+    margin: 0;
+    border-radius: var(--radius-sm);
+}
+
+.funsr-range-slider:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.funsr-range-slider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 6px;
+    background: var(--border-strong);
+    border-radius: 3px;
+}
+
+.funsr-range-slider::-moz-range-track {
+    width: 100%;
+    height: 6px;
+    background: var(--border-strong);
+    border-radius: 3px;
+}
+
+.funsr-range-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--surface);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+    margin-top: -6px;
+    cursor: pointer;
+    transition: background-color .12s ease;
+}
+
+.funsr-range-slider::-webkit-slider-thumb:hover {
+    background: var(--accent-hover);
+}
+
+.funsr-range-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--surface);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+    cursor: pointer;
+    transition: background-color .12s ease;
+}
+
+.funsr-range-slider::-moz-range-thumb:hover {
+    background: var(--accent-hover);
+}
+
+.funsr-preset-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.funsr-preset-btn {
+    min-height: 30px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 4px;
+}
+
+.funsr-draft-hint {
+    margin-top: 6px;
+    margin-bottom: 12px;
+}
+
+.funsr-preview-row {
+    margin-top: 6px;
+}
+
+.funsr-command-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.funsr-command-text {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: .5px;
+}
+
+.funsr-command-desc {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.funsr-confirm-label {
+    display: flex;
+    font-size: 12.5px;
+    font-weight: 550;
+    line-height: 1.4;
+    color: var(--text);
+    align-items: flex-start;
+    gap: 7px;
+    margin-bottom: 10px;
+}
+
+.funsr-confirm-label .form-check-input {
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.funsr-apply-btn {
+    width: 100%;
+    min-height: 36px;
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+.funsr-status-text {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--muted);
+    margin: 8px 0 0;
+    overflow-wrap: anywhere;
+}
+
+.funsr-reported-row {
+    margin-top: 2px;
+}
+
+.funsr-reported-value {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2px;
+}
+
+.funsr-notice {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+
+.funsr-notice p {
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--muted);
+}
+
+.funsr-doc-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+}
+
+.funsr-doc-link > .bi {
+    font-size: 11px;
+}
 
 .quick-heading {
     display: flex;
@@ -1482,19 +1711,12 @@ summary::-webkit-details-marker { display: none; }
     background: var(--surface);
 }
 
-.footer-engine {
-    font-weight: 600;
-    color: var(--text);
-}
-
 .footer-browser {
-    margin-left: auto;
+    margin-right: auto;
 }
 
 .app-footer a {
     color: var(--muted);
-    border-left: 1px solid var(--border);
-    padding-left: 12px;
 }
 
 .app-footer a:hover {
@@ -1634,11 +1856,6 @@ summary::-webkit-details-marker { display: none; }
     background: var(--success);
 }
 
-.monitor-state:has([data-state="demo"]) .status-dot,
-.port-section:has([data-state="demo"]) .status-dot {
-    background: var(--warning);
-}
-
 .monitor-state:has([data-state="busy"]) .status-dot,
 .port-section:has([data-state="busy"]) .status-dot {
     background: var(--accent);
@@ -1661,6 +1878,8 @@ summary::-webkit-details-marker { display: none; }
 @media (max-width: 1200px) {
     .connection-panel { width: 220px; }
     .tools-panel { width: 280px; }
+    .nav-tabs { gap: 8px; }
+    .nav-tabs .nav-link { font-size: 12px; padding: 8px 1px 7px; }
     .search-field kbd { display: none; }
     .encoding-note { display: none; }
 }
@@ -1751,11 +1970,6 @@ summary::-webkit-details-marker { display: none; }
     }
     .brand-copy h1 { font-size: 13.5px; }
     .header-actions .github-link { display: none; }
-    .demo-action {
-        font-size: 12px;
-        min-height: 26px;
-        padding: 2px 8px;
-    }
     .header-actions .icon-button {
         width: 26px;
         min-width: 26px;

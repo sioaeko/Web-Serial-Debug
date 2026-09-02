@@ -181,6 +181,89 @@
     return result;
   }
 
+  const FUNSR_KP_LIMITS = Object.freeze({ min: 0.5, max: 5, step: 0.1, defaultValue: 1.2 });
+
+  function validateFunsrKp(value) {
+    let number;
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (text.length > 32 || !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(text)) {
+        throw new TypeError('FUNSR PRO 설정값은 0.5~5.0 범위의 십진수로 입력해 주세요.');
+      }
+      const fraction = text.split('.')[1] || '';
+      if (/[1-9]/.test(fraction.slice(1))) throw new RangeError('FUNSR PRO 설정값은 0.1 단위로 입력해 주세요.');
+      number = Number(text);
+    } else if (typeof value === 'number') {
+      number = value;
+    } else {
+      throw new TypeError('FUNSR PRO 설정값은 숫자여야 합니다.');
+    }
+    if (!Number.isFinite(number) || number < FUNSR_KP_LIMITS.min || number > FUNSR_KP_LIMITS.max) {
+      throw new RangeError('FUNSR PRO 설정값은 0.5~5.0 범위여야 합니다.');
+    }
+    const tenths = Math.round(number * 10);
+    if (Math.abs(number * 10 - tenths) > 1e-9) throw new RangeError('FUNSR PRO 설정값은 0.1 단위로 입력해 주세요.');
+    return tenths / 10;
+  }
+
+  function formatFunsrKpCommand(value) {
+    return 'DKP' + validateFunsrKp(value).toFixed(1);
+  }
+
+  function buildFunsrKpPayload(value) {
+    // The documented configuration command is ASCII and always ends in CRLF.
+    // It is independent of the generic composer mode and line-ending setting.
+    const command = formatFunsrKpCommand(value) + '\r\n';
+    return Uint8Array.from(command, (character) => character.charCodeAt(0));
+  }
+
+  function createFunsrResponseParser() {
+    const maxLineLength = 512;
+    const maxEvents = 128;
+    let line = '';
+    let overflow = false;
+
+    function parseLine(text) {
+      const clean = text.trim();
+      if (/^kp saved, please reboot!$/i.test(clean)) return { type: 'saved' };
+      const updated = /^new kp is (\d+(?:\.\d+)?)!$/i.exec(clean);
+      const boot = /^Motor global kp is (\d+(?:\.\d+)?)$/i.exec(clean);
+      const match = updated || boot;
+      if (!match) return null;
+      const value = Number(match[1]);
+      if (!Number.isFinite(value) || value < FUNSR_KP_LIMITS.min || value > FUNSR_KP_LIMITS.max) return null;
+      // Reported values are observations, not drafts: do not round a device's
+      // different value into the one requested by the user.
+      return { type: updated ? 'new-kp' : 'boot', value };
+    }
+
+    return {
+      push(value) {
+        const input = typeof value === 'string' ? value : asBytes(value);
+        const events = [];
+        for (let index = 0; index < input.length; index += 1) {
+          const character = typeof input === 'string' ? input[index] : input[index] < 128 ? String.fromCharCode(input[index]) : '\uFFFD';
+          if (character === '\r' || character === '\n') {
+            if (!overflow && line) {
+              const event = parseLine(line);
+              if (event) {
+                if (events.length === maxEvents) events.shift();
+                events.push(event);
+              }
+            }
+            line = '';
+            overflow = false;
+          } else if (!overflow) {
+            if (line.length >= maxLineLength) { line = ''; overflow = true; }
+            else line += character;
+          }
+        }
+        return events;
+      },
+      reset() { line = ''; overflow = false; },
+    };
+  }
+
   function validateSerialOptions(value = {}) {
     const input = requireRecord(value, '시리얼 설정');
     const read = (key) => own(input, key) ? input[key] : DEFAULT_SERIAL_OPTIONS[key];
@@ -424,6 +507,11 @@
     parseHex,
     bytesToHex,
     appendLineEnding,
+    FUNSR_KP_LIMITS,
+    validateFunsrKp,
+    formatFunsrKpCommand,
+    buildFunsrKpPayload,
+    createFunsrResponseParser,
     validateSerialOptions,
     normalizeToolOptions,
     validateQuickSendList,
