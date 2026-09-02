@@ -13,14 +13,14 @@
     --subtle: #64748b;
     --border: #e2e8f0;
     --border-strong: #cbd5e1;
-    --accent: #1d63dd;
-    --accent-hover: #154db3;
-    --accent-soft: #edf3fd;
+    --accent: #0f766e;
+    --accent-hover: #0b5d56;
+    --accent-soft: #e6f4f2;
     --accent-contrast: #ffffff;
-    --btn-primary-bg: #1d63dd;
+    --btn-primary-bg: #0f766e;
     --btn-primary-color: #ffffff;
-    --btn-primary-hover-bg: #154db3;
-    --btn-primary-active-bg: #0f3d91;
+    --btn-primary-hover-bg: #0b5d56;
+    --btn-primary-active-bg: #0a4f49;
     --success: #0d7f4b;
     --success-soft: #eaf6ef;
     --danger: #c52233;
@@ -53,14 +53,14 @@
     --subtle: #8c9cb0;
     --border: #232c3b;
     --border-strong: #334155;
-    --accent: #388bfd;
-    --accent-hover: #58a6ff;
-    --accent-soft: #142540;
+    --accent: #14a89b;
+    --accent-hover: #2fc4b5;
+    --accent-soft: #0d2b27;
     --accent-contrast: #ffffff;
-    --btn-primary-bg: #1f6feb;
+    --btn-primary-bg: #0c8579;
     --btn-primary-color: #ffffff;
-    --btn-primary-hover-bg: #276ef1;
-    --btn-primary-active-bg: #1a5dc4;
+    --btn-primary-hover-bg: #0b7d72;
+    --btn-primary-active-bg: #09695f;
     --success: #2ea043;
     --success-soft: #11281a;
     --danger: #f85149;
@@ -272,8 +272,8 @@ h1, h2, h3, p { margin: 0; }
 
 /* Dark mode checked contrast fix (>= 3:1 contrast against white checkmark) */
 [data-theme="dark"] .form-check-input:checked {
-    background-color: #1f6feb;
-    border-color: #388bfd;
+    background-color: #0c8579;
+    border-color: #2fc4b5;
 }
 
 .check-label {
