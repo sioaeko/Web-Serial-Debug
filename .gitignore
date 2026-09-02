@@ -1,1 +1,13 @@
 /.vscode
+node_modules/
+dist/
+.cache/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+*.log
+test-results/
+playwright-report/
+.DS_Store
+Thumbs.db

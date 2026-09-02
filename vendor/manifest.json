@@ -1,0 +1,27 @@
+{
+  "versions": {
+    "bootstrap": "5.3.8",
+    "@popperjs/core": "2.11.8",
+    "bootstrap-icons": "1.13.1",
+    "codemirror": "5.65.21",
+    "ansi_up": "5.1.0"
+  },
+  "sha256": {
+    "bootstrap/bootstrap.min.css": "8f8173cb2d8f867274aeb0cb15328e60f490c7f272351e51a55f1dabb486e4ff",
+    "bootstrap/bootstrap.bundle.min.js": "c6f670216aedd2c61ec83102f7e40c1c44114eecd7f37b2edc332757390c386a",
+    "bootstrap/LICENSE": "4620c84ad5ce8602ff65640ed6b7c8b78ebb9e036584f0ebc1ccc88206a4bb51",
+    "popper/LICENSE.md": "bf67e2c9b7974543bb18ced3a0b37f53729aaff953b442dd89a3adaf90fd93e8",
+    "bootstrap-icons/bootstrap-icons.css": "004322721c8557331759bc6ddaacbb689b0f0715d688aec82bd056d2d5b5cc3b",
+    "bootstrap-icons/fonts/bootstrap-icons.woff": "f55513b7b591cb84a3b87ff0e34ea24d4831d6fedc22e54b911ca64b5b544a15",
+    "bootstrap-icons/fonts/bootstrap-icons.woff2": "6c75710364a1ca5604267716f6d28997b26319fdb078cf11e0b42ab66ff2ea61",
+    "bootstrap-icons/LICENSE": "0fb3e11bd57e896c5a512afd64864d28a37de45d19835016c87ca1ad19ead969",
+    "codemirror/codemirror.min.css": "eb494ea972d2661ef86f7f6ac656dd6786d721e49c9c1b46e1eb967e4b6f9bf3",
+    "codemirror/idea.min.css": "c52c1d627b1ed6ad74293c28ae35553f9de96f2fff926f7e4018618247cb3c98",
+    "codemirror/codemirror.min.js": "e98aac5ffa07bae58acd4ff07c4293059f8921c0ae0eba506929d8c6f41c9288",
+    "codemirror/active-line.min.js": "3afbcf78835c9bdc342e3992c53d9b74286722613bb1a8adc9d140edc8737ee8",
+    "codemirror/matchbrackets.min.js": "9d23a177f1e4d07e3acc37c210ffbe4c1c2eb4d55bbe54c16d3e7ad3d04d0401",
+    "codemirror/javascript.min.js": "1311c73c66308ba6f78512b4c2e770a6900c80c3629683763329668ee6111163",
+    "codemirror/LICENSE": "168a4becc968f5001e2ee2e0291b6e4daabafc1894a11ade1e11d56e96096e07",
+    "ansi_up/LICENSE": "9a8428273e4f596eeea6cb0897daafb91b9da6c558a2cb55b6b68432941e6ece"
+  }
+}

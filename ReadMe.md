@@ -1,94 +1,113 @@
-# Web Serial Debug
+# Web Serial Debug KR
 
-浏览器串口调试工具
+설치 없이 브라우저에서 사용하는 한국어 시리얼 모니터입니다. [itldg/web-serial-debug](https://github.com/itldg/web-serial-debug)를 정식 Fork하여 한글화하고 국내 사용 환경에 맞는 편의 기능을 더했습니다.
 
-仅测试了 Edge 和 Chrome 浏览器,其他浏览器未测试是否可用
+**[웹에서 열기](https://sioaeko.github.io/Web-Serial-Debug-KR/)** · [소스 코드](https://github.com/sioaeko/Web-Serial-Debug-KR)
 
-在线体验: [https://itldg.github.io/web-serial-debug/](https://itldg.github.io/web-serial-debug/)
+## 시작하기
 
-国内体验: [https://www.itldg.com/web_serial_debug/](https://www.itldg.com/web_serial_debug/)
+1. 데스크톱 Chrome 또는 Edge에서 위 사이트를 엽니다. 별도 앱 설치는 필요 없습니다.
+2. USB 시리얼 장치를 연결하고 **포트 선택**에서 장치를 고릅니다.
+3. 장치 설명서에 맞는 통신 속도·데이터 비트·패리티·종료 문자를 설정한 뒤 연결합니다. 프리셋은 시작점일 뿐 장치 설정을 자동 감지하지 않습니다.
+4. 수신 로그를 확인하거나 TEXT/HEX 모드에서 명령을 보냅니다.
 
-## 界面预览
+Web Serial을 지원하는 브라우저와 **HTTPS 또는 localhost/127.0.0.1** 환경이 필요합니다. Firefox, Safari 및 모바일 브라우저는 이 프로젝트의 지원 대상이 아닙니다. USB-시리얼 드라이버가 필요한 장치는 운영체제에 드라이버가 설치되어 있어야 합니다. 다른 프로그램이 포트를 사용 중이면 먼저 해당 프로그램의 연결을 해제하세요.
 
-![界面预览](/imgs/main.png)
+장치가 없다면 **데모 체험**으로 화면을 살펴볼 수 있습니다. 데모 데이터는 브라우저에서 생성한 모의 데이터이며 실제 포트를 열거나 실제 하드웨어의 정상 통신을 증명하지 않습니다.
 
-## 实现功能
+## 한국어판 기능
 
--   自动重连,设备插拔自动重连
--   所有串口参数可设置更改,配置自动保存
--   串口日志支持 HEX, TEXT 和 彩色ANSI,自动滚动
--   分包合并,设定超时时间
--   快捷发送列表,自定义分组,快捷导入导出
--   配置文件导入导出,方便迁移
--   自定义脚本,支持发送和接收数据处理
+- 설정, 안내, 오류 메시지와 스크립트 도움말 한글화
+- Arduino, ESP32 AT, Modbus RTU 통신 설정 프리셋
+- 수신 텍스트 UTF-8 / EUC-KR / Windows-1252 인코딩 선택
+- TEXT·HEX·ANSI 로그, 검색·필터, 표시 일시정지, 타임스탬프, 줄바꿈 및 로그 보관량 설정
+- 송수신 바이트 수와 최근 전송 기록, 자주 쓰는 명령의 그룹 관리
+- 설정 및 명령 모음 JSON 가져오기·내보내기
+- 밝은/어두운 테마와 키보드 단축키
+- 외부 CDN·분석 스크립트 없이 같은 사이트에서 모든 실행 자산 제공
 
-## 使用方法
+| 프리셋 | 시리얼 설정 | TEXT 종료 문자 |
+| --- | --- | --- |
+| Arduino | 9600 bps · 8N1 | LF |
+| ESP32 AT | 115200 bps · 8N1 | CRLF |
+| Modbus RTU | 9600 bps · 8E1 | 없음 |
 
-先选择一个电脑连接的串口
+Modbus 프리셋은 통신 파라미터만 설정합니다. Modbus 프레임 구성이나 CRC 계산을 자동으로 수행하는 기능은 아닙니다.
 
-调整串口参数后打开串口即可开始通讯
+수신 인코딩은 변경 이후 도착하는 데이터부터 적용되며, 바꾸어도 **TEXT 송신은 UTF-8**입니다. 다른 인코딩의 바이트를 전송해야 한다면 미리 변환한 값을 HEX 모드에 입력하세요. 종료 문자 없음/LF/CR/CRLF도 장치의 프로토콜에 맞춰 선택해야 합니다. 선택한 종료 문자는 TEXT 송신에만 붙고, HEX 송신은 입력한 원시 바이트만 보냅니다.
 
-中间区域是串口日志,可以选择 HEX ,TEXT 或者 彩色ANSI 显示
+## 편하게 사용하기
 
-下方是发送区域,可以选择 HEX 或者 TEXT 发送,定时循环发送
+| 단축키 | 동작 |
+| --- | --- |
+| Ctrl + Enter | 전송 입력창에서 명령 전송 |
+| Ctrl + L | 확인 후 로그·송수신 카운터 비우기 |
+| Ctrl + K | 로그 검색창으로 이동 |
+| Alt + ↑ / ↓ | 전송 입력창에서 이전/다음 전송 기록 |
 
-右侧可以自己添加一些常用指令,快捷发送
+macOS에서는 Ctrl 대신 ⌘ Command로도 사용할 수 있습니다. 한글 조합 중에는 전송 단축키가 동작하지 않습니다.
 
-## 自定义脚本
+전송 기록은 최근 30개를 유지합니다. 로그 표시를 일시정지해도 장치의 수신 자체가 멈추지는 않습니다. 로그 보관량 제한에 도달하면 오래된 항목부터 제거되므로 장시간 기록이 필요할 때는 중간에 로그를 저장하세요. 복사·저장은 현재 검색·방향 필터에 맞는 보관 로그를 대상으로 하므로, 화면을 일시정지한 동안 들어온 로그도 포함될 수 있습니다.
 
-自定义脚本可以在发送和接收数据时进行处理
+설정 백업과 명령 모음은 JSON 파일로 이동할 수 있습니다. 설정 백업을 가져오기 전에는 실제 연결 또는 데모를 종료하세요. 가져오기는 값을 불러오는 작업이며 연결, 반복 전송 또는 스크립트 실행을 자동으로 시작하지 않습니다. 기존 설정을 바꾸기 전에는 현재 설정을 먼저 내보내 두는 것을 권장합니다.
 
-脚本支持 JavaScript 语法,通过`postMessage`和`onmessage`进行通讯
+## 사용자 스크립트
 
-如下是一个简单的脚本示例
+JavaScript로 수신 데이터를 해석하거나 명령을 생성할 수 있습니다. 아래 예제는 수신 길이만 로그에 표시하며 자동으로 데이터를 보내지 않습니다.
 
 ```javascript
-addEventListener('message', function ({data}) {
-    if(data.type=='uart_receive')
-    {
-        postMessage({type:'log',data:'消息长度:'+data.data.length});
-        //原文答复
-        postMessage({type:'uart_send',data:data.data});
-    }
-})
-setInterval(function(){
-    //定时发送
-    postMessage({type:'uart_send_txt',data:'hello world'});
-},1000);
+addEventListener('message', ({ data }) => {
+  if (data.type === 'uart_receive') {
+    postMessage({ type: 'log', data: '수신: ' + data.data.length + '바이트' });
+  }
+});
 ```
 
-`onmessage`接收到的数据格式如下
+| 메시지 종류 | 데이터 | 방향·의미 |
+| --- | --- | --- |
+| `uart_receive` | 바이트 배열 | 앱 → 스크립트: 수신 데이터 |
+| `uart_send` | 바이트 배열 | 스크립트 → 앱: 바이트 송신 |
+| `uart_send_txt` | 문자열 | 스크립트 → 앱: UTF-8 텍스트 송신 |
+| `uart_send_hex` | 16진수 문자열 | 스크립트 → 앱: HEX 송신 |
+| `log` | 문자열 | 스크립트 → 앱: 로그 출력 |
 
-```js
-{
-    "type":"uart_receive", //消息类型 String,目前仅支持 uart_receive
-    "data":[0,1] //消息内容 Uint8Array
-}
+**직접 확인하고 신뢰하는 코드만 실행하세요.** Worker는 UI 스레드와 실행을 분리할 뿐 네트워크 접근을 막는 보안 샌드박스가 아닙니다. 실행한 코드는 장치로 명령을 보내거나 네트워크 요청을 시도할 수 있습니다. 출처를 모르는 설정 파일에 포함된 스크립트를 실행하지 마세요.
+
+## 개인정보와 저장 위치
+
+기본 앱은 시리얼 데이터·명령·설정을 외부 서버로 전송하지 않으며 광고·방문 분석 코드를 포함하지 않습니다. 설정과 명령 모음 등은 사용 중인 브라우저의 로컬 저장소에 저장됩니다. 다른 브라우저나 기기로 자동 동기화되지 않고, 사이트 데이터를 지우면 로컬 설정도 지워질 수 있습니다.
+
+사이트를 불러올 때는 GitHub Pages에 정적 파일을 요청하므로 호스팅 사업자의 일반적인 접속 기록은 별개입니다. 사용자가 직접 실행하는 스크립트는 위의 네트워크 제한을 보장하지 않습니다. 내보낸 설정·명령·로그에는 장치 정보나 민감한 내용이 들어갈 수 있으니 공유 전에 확인하세요.
+
+## 개발·검증
+
+개발할 때만 Node.js 22.13 이상인 22.x 또는 24 이상과 npm이 필요합니다. CI는 최신 22.x를 사용합니다.
+
+```sh
+npm ci --ignore-scripts
+npm run vendor
+npm test
+npm run build
+npm run dev
 ```
 
-`postMessage`发送的数据格式如下
+개발 주소는 [http://127.0.0.1:4173/Web-Serial-Debug-KR/](http://127.0.0.1:4173/Web-Serial-Debug-KR/)입니다. `npm run preview`는 빌드한 `dist/`를 같은 주소로 제공합니다. 포트 변경은 `npm run dev -- --port 4174`처럼 지정합니다. 개발 서버는 읽기 전용이며 공개 파일만 제공합니다.
 
-```js
-{
-    "type":"uart_send", 
-    "data":[0,1]
-}
-```
+- `npm run vendor`: 버전이 고정된 로컬 npm 패키지에서 실행 자산과 라이선스를 복사합니다.
+- `npm run check`: JavaScript 문법, 중복 ID, 한국어 문서 선언, 로컬 자산 경로 및 알려진 추적 코드 잔존 여부를 검사합니다.
+- `npm test`: Node.js 자동 테스트를 실행합니다.
+- `npm run build`: `vendor/`를 다시 생성하고 검증한 공개 파일만 새 `dist/`에 복사합니다. `npm ci` 이후 빌드에 CDN이나 추가 네트워크 다운로드가 필요하지 않습니다.
 
-| TYPE 类型     | DATA 数据格式 | 说明               |
-| ------------- | ------------- | ------------------ |
-| uart_send     | Uint8Array    | 发送字节数据       |
-| uart_send_txt | String        | 发送文本数据       |
-| uart_send_hex | String        | 发送十六进制字符串 |
-| log           | String        | 打印日志           |
+`vendor/`와 `dist/`는 다시 생성될 수 있으므로 직접 수정하지 마세요. 빌드는 저장소 루트 주소와 GitHub Pages의 하위 경로에서 모두 해석되는 상대 자산 경로를 검증합니다. 자동 테스트와 데모는 실제 USB 장치, 드라이버 및 케이블을 연결한 실기기 검증을 대체하지 않습니다.
 
+## GitHub Pages 배포
 
-## 开源
+저장소의 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 설정합니다. `main`에 변경 사항을 push하면 테스트와 빌드가 성공한 경우에만 `dist/`가 배포됩니다. Actions에서 수동 실행할 수도 있으며, `main` 이외의 브랜치와 Pull Request는 배포하지 않습니다.
 
-代码凌乱不堪，无学习价值
+워크플로는 [.github/workflows/pages.yml](.github/workflows/pages.yml)에 있습니다. 저장소 쓰기 권한이나 개인 토큰 없이 GitHub의 Pages 배포 권한으로 동작합니다. 다른 계정·저장소 이름으로 Fork했다면 위 사용 주소도 해당 Pages 주소로 변경하세요.
 
-希望各位大佬可以协助添砖加瓦，让其更加完善
+## 원작과 라이선스
 
-常用的朋友也可以提交一些常用的指令集,后续做一下常用指令集的整理
+원작: **itldg 및 Web Serial Debug 기여자** — [원본 저장소](https://github.com/itldg/web-serial-debug)
 
-开源地址：[GitHub](https://github.com/itldg/web-serial-debug) | [Gitee](https://gitee.com/itldg/web-serial-debug)
+이 저장소는 원작을 기반으로 하는 독립적인 한국어 커뮤니티 포크이며 원작의 공식 한국어 릴리스를 뜻하지 않습니다. 원본의 [Apache License 2.0](LICENSE)을 유지합니다. 한국어화와 기능·배포 관련 변경 사실은 [NOTICE](NOTICE)에, 포함된 외부 구성 요소의 라이선스는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 안내합니다.

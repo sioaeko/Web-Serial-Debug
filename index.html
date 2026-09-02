@@ -1,364 +1,191 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<!-- Korean localization and workspace improvements. Based on itldg/web-serial-debug.
+     Apache-2.0; original attribution and modification details are in LICENSE and NOTICE. -->
+<html lang="ko" data-theme="light">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Serial Debug-浏览器串口调试工具</title>
-
-    <link href="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/codemirror.css" rel="stylesheet">
-    <link href="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/theme/idea.min.css" rel="stylesheet">
-    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.2.3/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap-icons/1.11.0/font/bootstrap-icons.css" rel="stylesheet">
-
-    <script src="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-    <script src="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
-    <script src="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.js"></script>
-    <script src="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
-    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
-
+    <meta name="theme-color" content="#f0f2f5">
+    <meta name="description" content="설치 없이 브라우저에서 사용하는 한국어 웹 시리얼 디버거. Arduino, ESP32, USB-UART 연결, 한글 로그, HEX 전송, 명령 모음을 지원합니다.">
+    <title>Web Serial Debug KR · 웹 시리얼 디버거</title>
+    <link rel="icon" href="imgs/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css">
+    <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.css">
+    <link rel="stylesheet" href="vendor/codemirror/codemirror.min.css">
+    <link rel="stylesheet" href="vendor/codemirror/idea.min.css">
     <link rel="stylesheet" href="css/style.css">
-    <link rel="icon" href="imgs/logo.svg" type="image/svg+xml">
-    <script>
-        hideTop = function () {
-            var header = document.querySelector('.bd-header');
-            header.remove();
-            document.documentElement.style.setProperty('--top-height', '0px');
-        }
-    </script>
-    <script>
-        !function (p) { "use strict"; !function (t) { var s = window, e = document, i = p, c = "".concat("https:" === e.location.protocol ? "https://" : "http://", "sdk.51.la/js-sdk-pro.min.js"), n = e.createElement("script"), r = e.getElementsByTagName("script")[0]; n.type = "text/javascript", n.setAttribute("charset", "UTF-8"), n.async = !0, n.src = c, n.id = "LA_COLLECT", i.d = n; var o = function () { s.LA.ids.push(i) }; s.LA ? s.LA.ids && o() : (s.LA = p, s.LA.ids = [], o()), r.parentNode.insertBefore(n, r) }() }({ id: "JuSxXIvOMGPBMkpo", ck: "JuSxXIvOMGPBMkpo" });
-    </script>
 </head>
-
 <body>
-    <header class="bd-header bg-dark py-3 d-flex align-items-stretch border-bottom border-dark">
-        <div class="container-fluid d-flex align-items-center">
-            <h1 class="d-flex align-items-center fs-4 text-white mb-0">
-                <img src="imgs/logo.svg" width="38" height="30" class="me-3" alt="Web Serial">
-                Web Serial Debug
-            </h1>
-            <span class="ms-auto">
-                <span class="link-light">代码已开源:</span>
-                <a href="https://github.com/itldg/web-serial-debug" target="_blank" class="link-light">Github</a>
-                <a href="https://gitee.com/itldg/web-serial-debug" target="_blank" class="link-light">Gitee</a>
-                <a href="javascript:hideTop()" class="link-light ml-2">隐藏头部</a>
-            </span>
+    <a class="skip-link" href="#serial-send-content">전송 입력으로 건너뛰기</a>
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-symbol" aria-hidden="true"><img src="imgs/logo.svg" width="22" height="22" alt=""></span>
+            <div class="brand-copy"><h1>시리얼 디버그 <span class="edition">KR</span></h1></div>
         </div>
+        <nav class="header-actions" aria-label="앱 메뉴">
+            <button class="btn btn-quiet demo-action" id="serial-demo" type="button"><i class="bi bi-play-circle" aria-hidden="true"></i> 데모 체험</button>
+            <button class="btn btn-quiet icon-button" type="button" data-bs-toggle="modal" data-bs-target="#model-help" title="사용 안내 및 단축키" aria-label="사용 안내 및 단축키"><i class="bi bi-question-circle" aria-hidden="true"></i></button>
+            <button class="btn btn-quiet icon-button" type="button" id="serial-theme" title="어두운 테마로 변경" aria-label="어두운 테마로 변경"><i class="bi bi-moon" aria-hidden="true"></i></button>
+            <a class="btn btn-quiet github-link" href="https://github.com/sioaeko/Web-Serial-Debug-KR" target="_blank" rel="noopener noreferrer" aria-label="GitHub 소스 코드 (새 탭)"><i class="bi bi-github" aria-hidden="true"></i><span>GitHub</span><i class="bi bi-arrow-up-right external-arrow" aria-hidden="true"></i></a>
+        </nav>
     </header>
+    <div id="demo-banner" class="demo-banner" role="status" hidden>데모 모드 · 실제 장치와 통신하지 않습니다. 가상 데이터로 기능을 확인하세요.</div>
 
-    <div id="main" class="d-flex">
-        <!--左侧串口配置-->
-        <div id="serial-options" class="col-auto m-0 bg-light sidebar">
-            <div class="collapse show p-2 float-start">
-                <div class="input-group mb-3">
-                    <span class="input-group-text">波特率</span>
-                    <input type="number" id="serial-baud" class="form-control" placeholder="选择波特率" value="115200"
-                        list="baud-list">
-                    <datalist id="baud-list">
-                        <option>110</option>
-                        <option>300</option>
-                        <option>600</option>
-                        <option>1200</option>
-                        <option>2400</option>
-                        <option>4800</option>
-                        <option>7200</option>
-                        <option>9600</option>
-                        <option>14400</option>
-                        <option>19200</option>
-                        <option>28800</option>
-                        <option>38400</option>
-                        <option>56000</option>
-                        <option>57600</option>
-                        <option>76800</option>
-                        <option>115200</option>
-                        <option>230400</option>
-                        <option>460800</option>
-                    </datalist>
-                </div>
-
-                <div class="input-group mb-3">
-                    <span class="input-group-text">数据位</span>
-                    <select class="form-select" id="serial-data-bits">
-                        <option>8</option>
-                        <option>7</option>
-                    </select>
-                </div>
-
-                <div class="input-group mb-3">
-                    <span class="input-group-text">停止位</span>
-                    <select class="form-select" id="serial-stop-bits">
-                        <option>1</option>
-                        <option>2</option>
-                    </select>
-                </div>
-
-                <div class="input-group mb-3">
-                    <span class="input-group-text">校验位</span>
-                    <select class="form-select" id="serial-parity">
-                        <Option value="none">None</Option>
-                        <Option value="even">Even</Option>
-                        <Option value="odd">Odd</Option>
-                    </select>
-                </div>
-
-                <div class="input-group mb-3">
-                    <span class="input-group-text">缓冲区</span>
-                    <input type="number" id="serial-buffer-size" class="form-control" placeholder="缓冲区大小"
-                        list="buffer-size-list" max="1677216" value="1024">
-                    <datalist id="buffer-size-list">
-                        <option>255</option>
-                        <option>512</option>
-                        <option>1024</option>
-                        <option>2048</option>
-                        <option>4096</option>
-                        <option>8192</option>
-                    </datalist>
-                </div>
-
-                <div class="input-group mb-3">
-                    <span class="input-group-text">流控制</span>
-                    <select class="form-select" id="serial-flow-control">
-                        <Option value="none">None</Option>
-                        <Option value="hardware">HardWare</Option>
-                    </select>
-                </div>
-
-                <div class="d-flex mt-2">
-                    <button class="btn btn-secondary me-3" id="serial-select-port">选择串口</button>
-                    <button class="btn btn-primary flex-grow-1" id="serial-open-or-close">打开串口</button>
-                </div>
-
-                <div id="serial-status" class="mt-2">
-                    <div class="alert alert-info" role="alert">
-                        未选择串口
+    <main id="main" class="workspace" aria-label="시리얼 디버그 작업 공간">
+        <aside id="serial-options" class="sidebar connection-panel" aria-labelledby="connection-heading">
+            <div class="panel-heading">
+                <div class="section-title"><i class="bi bi-usb-symbol" aria-hidden="true"></i><h2 id="connection-heading">연결 설정</h2></div>
+                <button class="toggle-button icon-button" type="button" title="연결 설정 접기 또는 펼치기" aria-label="연결 설정 접기 또는 펼치기"><i class="bi bi-chevron-compact-left" aria-hidden="true"></i></button>
+            </div>
+            <div class="collapse show sidebar-content">
+                <section class="port-section" aria-label="장치 선택">
+                    <div class="small-label">시리얼 포트</div>
+                    <div class="port-status"><span class="status-dot" aria-hidden="true"></span><span id="serial-connection-label">연결 안 됨</span></div>
+                    <p id="serial-port-info" class="muted port-info">USB 장치를 연결하고 포트를 선택하세요.</p>
+                    <button class="btn btn-outline-secondary port-select-button" id="serial-select-port" type="button"><i class="bi bi-plus-lg" aria-hidden="true"></i> 포트 선택</button>
+                    <div id="serial-status" class="connection-message" role="status" aria-live="polite">아직 선택한 포트가 없습니다.</div>
+                </section>
+                <div class="connection-fields">
+                    <label class="field-label" for="serial-preset">빠른 설정</label>
+                    <select class="form-select" id="serial-preset"><option value="custom">직접 설정</option><option value="arduino">Arduino · 9600 / LF</option><option value="esp32">ESP32 AT · 115200 / CRLF</option><option value="modbus">Modbus RTU · 9600 / 8E1</option></select>
+                    <p class="field-hint">장치 펌웨어의 통신 속도와 맞춰 주세요.</p>
+                    <div class="input-group field-stack">
+                        <label class="field-label" for="serial-baud">통신 속도</label>
+                        <input type="number" id="serial-baud" class="form-control" value="115200" min="1" max="4000000" step="1" list="baud-list" inputmode="numeric">
+                        <datalist id="baud-list"><option value="1200"></option><option value="2400"></option><option value="4800"></option><option value="9600"></option><option value="19200"></option><option value="38400"></option><option value="57600"></option><option value="115200"></option><option value="230400"></option><option value="460800"></option><option value="921600"></option><option value="2000000"></option></datalist>
                     </div>
+                    <div class="field-pair">
+                        <div class="input-group field-stack"><label class="field-label" for="serial-data-bits">데이터 비트</label><select class="form-select" id="serial-data-bits"><option value="8">8 bit</option><option value="7">7 bit</option></select></div>
+                        <div class="input-group field-stack"><label class="field-label" for="serial-stop-bits">정지 비트</label><select class="form-select" id="serial-stop-bits"><option value="1">1 bit</option><option value="2">2 bit</option></select></div>
+                    </div>
+                    <div class="input-group field-stack"><label class="field-label" for="serial-parity">패리티</label><select class="form-select" id="serial-parity"><option value="none">없음 (None)</option><option value="even">짝수 (Even)</option><option value="odd">홀수 (Odd)</option></select></div>
+                    <details class="advanced-settings">
+                        <summary>고급 연결 설정 <i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+                        <div class="input-group field-stack">
+                            <label class="field-label" for="serial-buffer-size">수신 버퍼 크기 (바이트)</label>
+                            <input type="number" id="serial-buffer-size" class="form-control" value="1024" min="1" max="16777216" step="1" list="buffer-size-list">
+                            <datalist id="buffer-size-list"><option value="512"></option><option value="1024"></option><option value="4096"></option><option value="8192"></option></datalist>
+                        </div>
+                        <div class="input-group field-stack"><label class="field-label" for="serial-flow-control">흐름 제어</label><select class="form-select" id="serial-flow-control"><option value="none">없음</option><option value="hardware">하드웨어 (RTS/CTS)</option></select></div>
+                    </details>
+                    <label class="check-label reconnect-option" for="serial-auto-reconnect"><input class="form-check-input" type="checkbox" id="serial-auto-reconnect"> 장치 재연결 시 자동 연결</label>
+                    <button class="btn btn-primary connect-button" id="serial-open-or-close" type="button"><i class="bi bi-plug" aria-hidden="true"></i> 연결하기</button>
                 </div>
             </div>
-            <button class="toggle-button float-end" title="隐藏/打开边栏">
-                <i class="bi bi-chevron-compact-left"></i>
-            </button>
+        </aside>
 
-        </div>
-        <div class="clear"></div>
-        <!--中间串口日志-->
-        <div id="log-main" class="flex-fill px-md-2">
-            <div
-                class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-1 pb-1 mb-1 flex-shrink-0">
-                <h1 class="h3">串口日志</h1>
-
-                <div class="btn-toolbar">
-                    <div class="input-group input-group-sm me-2">
-                        <span class="input-group-text">分包超时</span>
-                        <input type="number" id="serial-timer-out" class="form-control" placeholder="0不分包" value="50"
-                            style="width: 100px;" />
-                    </div>
-
-                    <div class="input-group input-group-sm me-2">
-                        <span class="input-group-text">日志类型</span>
-                        <select class="form-select" id="serial-log-type" style="width: 120px;">
-                            <Option value="hex&text">Hex和Text</Option>
-                            <Option value="hex">Hex</Option>
-                            <Option value="text">Text</Option>
-                            <Option value="ansi">彩色Ansi</Option>
-                        </select>
-                    </div>
-
-                    <div class="btn-group">
-                        <button class="btn btn-sm btn-outline-secondary" id="serial-auto-scroll">自动滚动</button>
-                        <button class="btn btn-sm btn-outline-secondary" id="serial-clear">清空</button>
-                        <button class="btn btn-sm btn-outline-secondary" id="serial-copy">复制</button>
-                        <button class="btn btn-sm btn-outline-secondary" id="serial-save">导出</button>
+        <section id="log-main" class="terminal-workspace" aria-labelledby="log-heading">
+            <div class="workspace-titlebar">
+                <div class="workspace-title-group"><h2 id="log-heading">송수신 로그</h2></div>
+                <div class="monitor-state"><span class="status-dot" aria-hidden="true"></span><span id="serial-live-state">연결 대기</span></div>
+            </div>
+            <section class="terminal-panel" aria-label="통신 로그">
+                <div class="log-toolbar">
+                    <div class="search-field"><i class="bi bi-search" aria-hidden="true"></i><input type="search" id="serial-search" placeholder="로그 검색" aria-label="로그 검색" autocomplete="off"><kbd>Ctrl K</kbd></div>
+                    <select class="form-select compact-select direction-select" id="serial-direction" aria-label="로그 방향 필터"><option value="all">전체</option><option value="rx">수신 RX</option><option value="tx">송신 TX</option><option value="system">시스템</option></select>
+                    <div class="toolbar-divider" aria-hidden="true"></div>
+                    <button class="btn btn-quiet toolbar-button" id="serial-pause" type="button" title="로그 표시 일시정지 · 수신은 계속됩니다"><i class="bi bi-pause" aria-hidden="true"></i> 일시정지</button>
+                    <div class="log-actions">
+                        <button class="btn btn-quiet icon-button" id="serial-copy" type="button" title="필터에 맞는 보관 로그 복사 · 일시정지 중 수신분 포함" aria-label="필터에 맞는 보관 로그 복사"><i class="bi bi-copy" aria-hidden="true"></i></button>
+                        <button class="btn btn-quiet icon-button" id="serial-save" type="button" title="필터에 맞는 보관 로그 저장 · 일시정지 중 수신분 포함" aria-label="필터에 맞는 보관 로그 저장"><i class="bi bi-download" aria-hidden="true"></i></button>
+                        <button class="btn btn-quiet icon-button" id="serial-clear" type="button" title="로그 비우기 (Ctrl+L)" aria-label="로그 비우기"><i class="bi bi-trash3" aria-hidden="true"></i></button>
                     </div>
                 </div>
-            </div>
-            <div id="serial-logs" class="flex-grow-1 border border-2 rounded mb-2"></div>
-            <div class="flex-shrink-0 mb-2">
-                <textarea class="form-control" rows="3" id="serial-send-content" style="resize: none;"
-                    placeholder="在此输入要发送的内容,可以是字符串(如:你好,世界!),也可以是HEX(如:49544c4447)"></textarea>
-                <div
-                    class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-1 pb-1 mb-1 flex-shrink-0">
-                    <div class="btn-toolbar">
-                        <div class="form-check align-self-center me-2">
-                            <input class="form-check-input" type="checkbox" id="serial-add-crlf">
-                            <label class="form-check-label" for="serial-add-crlf">
-                                末尾加回车换行
-                            </label>
-                        </div>
-                        <div class="form-check align-self-center me-2">
-                            <input class="form-check-input" type="checkbox" id="serial-hex-send">
-                            <label class="form-check-label" for="serial-hex-send">
-                                HEX发送
-                            </label>
-                        </div>
-                        <div class="form-check align-self-center me-2">
-                            <input class="form-check-input" type="checkbox" id="serial-loop-send">
-                            <label class="form-check-label" for="serial-loop-send">
-                                循环发送
-                            </label>
-                        </div>
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text">发送间隔(MS)</span>
-                            <input type="number" id="serial-loop-send-time" class="form-control" placeholder="" min="1"
-                                value="1000" style="width: 100px;" />
-                        </div>
-                    </div>
-                    <button id="serial-send" class="btn btn-primary h-10 px-5"><i class="bi bi-send"></i>
-                        发送</button>
+                <div class="log-display-options">
+                    <div class="inline-field"><label for="serial-log-type">표시</label><select class="form-select compact-select" id="serial-log-type"><option value="text">텍스트</option><option value="hex">HEX</option><option value="hex&text">HEX + 텍스트</option><option value="ansi">ANSI 컬러</option></select></div>
+                    <div class="inline-field"><label for="serial-encoding">수신 인코딩</label><select class="form-select compact-select" id="serial-encoding" title="이후 수신되는 데이터부터 적용됩니다. 텍스트 송신은 UTF-8입니다."><option value="utf-8">UTF-8</option><option value="euc-kr">EUC-KR (CP949)</option><option value="windows-1252">Windows-1252</option></select></div>
+                    <button class="btn btn-quiet auto-scroll-button" id="serial-auto-scroll" type="button" aria-pressed="true"><i class="bi bi-arrow-down" aria-hidden="true"></i> 자동 스크롤</button>
                 </div>
+                <div class="terminal-body">
+                    <div id="serial-logs" role="log" aria-label="시리얼 송수신 로그" aria-live="off" tabindex="0"></div>
+                    <div id="serial-empty-state" class="empty-state">
+                        <h3 data-empty-title>수신 대기 중</h3>
+                        <p data-empty-description>장치를 연결하거나 상단 데모 체험으로 송수신을 확인할 수 있습니다.</p>
+                    </div>
+                </div>
+                <div class="log-statusbar">
+                    <div class="traffic-stats"><span><i class="bi bi-arrow-down-left" aria-hidden="true"></i> RX <b id="serial-rx-count">0 B</b></span><span><i class="bi bi-arrow-up-right" aria-hidden="true"></i> TX <b id="serial-tx-count">0 B</b></span><span class="log-count-label">로그 <b id="serial-log-count">0</b></span></div>
+                    <span class="session-clock"><i class="bi bi-clock" aria-hidden="true"></i> <span id="serial-session-time">00:00</span></span>
+                </div>
+            </section>
+            <section class="composer" aria-labelledby="send-heading">
+                <div class="composer-heading"><h3 id="send-heading">데이터 전송</h3><div class="history-tools"><i class="bi bi-clock-history" aria-hidden="true"></i><select id="serial-history" class="form-select compact-select" aria-label="최근 전송 기록"><option value="">최근 전송 기록</option></select><button class="btn btn-quiet icon-button" id="serial-history-clear" type="button" title="전송 기록 삭제" aria-label="전송 기록 삭제"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div></div>
+                <div class="composer-input-wrap"><label class="visually-hidden" for="serial-send-content">전송할 데이터</label><textarea class="form-control" rows="3" id="serial-send-content" spellcheck="false" placeholder="전송할 내용을 입력하세요. 예: AT 또는 안녕하세요"></textarea><span id="serial-byte-count" class="byte-count" aria-live="polite">0 B</span></div>
+                <div class="send-options">
+                    <label class="check-label" for="serial-hex-send"><input class="form-check-input" type="checkbox" id="serial-hex-send"> HEX 전송</label>
+                    <div class="inline-field line-ending-field" title="텍스트 전송에만 적용됩니다. HEX는 입력한 원시 바이트만 전송합니다."><label for="serial-line-ending">줄바꿈</label><select class="form-select compact-select" id="serial-line-ending"><option value="none">없음</option><option value="lf">LF (\n)</option><option value="cr">CR (\r)</option><option value="crlf">CRLF (\r\n)</option></select></div>
+                    <span class="encoding-note">텍스트 전송: UTF-8</span>
+                </div>
+                <div class="send-actions"><div class="repeat-options"><label class="check-label" for="serial-loop-send"><input class="form-check-input" type="checkbox" id="serial-loop-send"> 반복 전송</label><label class="visually-hidden" for="serial-loop-send-time">반복 전송 간격 (밀리초)</label><input type="number" id="serial-loop-send-time" class="form-control compact-number" min="100" max="3600000" step="100" value="1000"><span class="muted">ms</span></div><button id="serial-send" class="btn btn-primary send-button" type="button"><i class="bi bi-arrow-up-right" aria-hidden="true"></i> 전송 <kbd>Ctrl ↵</kbd></button></div>
+            </section>
+        </section>
+
+        <aside id="serial-tools" class="sidebar tools-panel" aria-label="명령 모음 및 도구">
+            <div class="panel-heading tools-heading">
+                <nav class="tool-tabs" aria-label="작업 도구 탭"><div class="nav nav-tabs" id="nav-tab" role="tablist"><button class="nav-link active" id="nav-quick-send-tab" data-bs-toggle="tab" data-bs-target="#nav-quick-send" type="button" role="tab" aria-controls="nav-quick-send" aria-selected="true">명령 모음</button><button class="nav-link" id="nav-options-tab" data-bs-toggle="tab" data-bs-target="#nav-options" type="button" role="tab" aria-controls="nav-options" aria-selected="false">설정</button><button class="nav-link" id="nav-code-tab" data-bs-toggle="tab" data-bs-target="#nav-code" type="button" role="tab" aria-controls="nav-code" aria-selected="false">스크립트</button></div></nav>
+                <button class="toggle-button icon-button" type="button" title="작업 도구 접기 또는 펼치기" aria-label="작업 도구 접기 또는 펼치기"><i class="bi bi-chevron-compact-right" aria-hidden="true"></i></button>
             </div>
-        </div>
-        <div class="clear"></div>
-
-        <!--右侧串口工具-->
-        <div id="serial-tools" class="col-auto m-0 bg-light sidebar">
-            <button class="toggle-button float-start" title="隐藏/打开边栏">
-                <i class="bi bi-chevron-compact-right"></i>
-            </button>
-            <div class="collapse show p-1 float-start overflow-hidden" style="width:428px">
-
-                <nav>
-                    <div class="nav nav-tabs" id="nav-tab" role="tablist">
-                        <button class="nav-link active" id="nav-quick-send-tab" data-bs-toggle="tab"
-                            data-bs-target="#nav-quick-send" type="button" role="tab" aria-controls="nav-quick-send"
-                            aria-selected="true">快捷发送</button>
-                        <button class="nav-link" id="nav-options-tab" data-bs-toggle="tab" data-bs-target="#nav-options"
-                            type="button" role="tab" aria-controls="nav-options" aria-selected="false">系统选项</button>
-                        <button class="nav-link" id="nav-code-tab" data-bs-toggle="tab" data-bs-target="#nav-code"
-                            type="button" role="tab" aria-controls="nav-code" aria-selected="false">代码脚本</button>
-
-                    </div>
-                </nav>
-                <div class="tab-content pt-2 flex-fill" id="nav-tabContent">
-                    <div class="tab-pane fade show active" id="nav-quick-send" role="tabpanel"
-                        aria-labelledby="nav-quick-send-tab">
-                        <div class="btn-toolbar">
-                            <div class="flex-grow-1 input-group input-group-sm me-2">
-                                <span class="input-group-text">选择分组</span>
-                                <select class="form-select" id="serial-quick-send">
-                                </select>
-                            </div>
-
-                            <div class="btn-group">
-                                <button class="btn btn-sm btn-outline-secondary"
-                                    id="serial-quick-send-add-group">新增</button>
-                                <button class="btn btn-sm btn-outline-secondary"
-                                    id="serial-quick-send-rename-group">改名</button>
-                                <button class="btn btn-sm btn-outline-secondary"
-                                    id="serial-quick-send-remove-group">删除</button>
-                                <!-- <button class="btn btn-sm btn-outline-secondary">云端</button> -->
-                            </div>
-                        </div>
-                        <div class="d-flex mt-2">
-                            <button id="serial-quick-send-add" class="btn btn-sm btn-outline-secondary me-5"><i
-                                    class="bi bi-plus-square"></i> 增加一条</button>
-                            <button class="btn btn-sm btn-outline-secondary me-2 flex-grow-1"
-                                id="serial-quick-send-import-btn"><i class="bi bi-folder-plus"></i>
-                                导入</button>
-                            <input type="file" id="serial-quick-send-import" style="display: none;"
-                                accept="application/json" />
-                            <button class="btn btn-sm btn-outline-secondary flex-grow-1"
-                                id="serial-quick-send-export"><i class="bi bi-folder-symlink"></i>
-                                导出</button>
-                        </div>
-                        <div class="mt-2">
-                            <div class="d-flex">
-                                <span class="me-2 ms-3">移除</span>
-                                <span class="flex-grow-1 me-1">发送内容,点击修改,双击改名</span>
-                                <span class="flex-shrink-0 me-3">显示名称</span>
-                                <span class="flex-shrink-0 me-2">HEX</span>
-                            </div>
-                        </div>
-                        <div id="serial-quick-send-content"
-                            class="flex-grow-1 border border-2 p-2 rounded overflow-auto">
-                        </div>
-                    </div>
-                    <div class="tab-pane fade" id="nav-options" role="tabpanel" aria-labelledby="nav-options-tab">
-                        <h5>系统配置</h5>
-                        <button class="btn btn-sm btn-outline-secondary me-2" id="serial-reset"><i
-                                class="bi bi-arrow-repeat"></i> 重置参数</button>
-                        <button class="btn btn-sm btn-outline-secondary me-2" id="serial-export"><i
-                                class="bi bi-folder-symlink"></i> 导出配置</button>
-                        <button class="btn btn-sm btn-outline-secondary me-2" id="serial-import"><i
-                                class="bi bi-folder-plus"></i> 导入配置</button>
-                        <input type="file" id="serial-import-file" style="display: none;" accept="application/json" />
-                    </div>
-                    <div class="tab-pane d-flex flex-column fade" id="nav-code" role="tabpanel"
-                        aria-labelledby="nav-code-tab">
-                        <div class="flex-grow-1 overflow-hidden" id="serial-code-editor">
-                            <textarea class="form-control" rows="3" id="serial-code-content" style="resize: none;"
-                                placeholder="在此输入要执行的代码脚本">
-addEventListener('message', function ({data}) {
-    if(data.type=='uart_receive')
-    {
-        postMessage({type:'log',data:'消息长度:'+data.data.length});
-        //原文答复
-        postMessage({type:'uart_send',data:data.data});
+            <div class="collapse show sidebar-content">
+                <div class="tab-content" id="nav-tabContent">
+                    <section class="tab-pane fade show active" id="nav-quick-send" role="tabpanel" aria-labelledby="nav-quick-send-tab" tabindex="0">
+                        <div class="quick-heading"><label class="field-label" for="serial-quick-send">명령 그룹</label><div class="group-actions"><button class="btn btn-quiet icon-button" id="serial-quick-send-add-group" type="button" title="명령 그룹 추가" aria-label="명령 그룹 추가"><i class="bi bi-plus-lg" aria-hidden="true"></i></button><button class="btn btn-quiet icon-button" id="serial-quick-send-rename-group" type="button" title="명령 그룹 이름 변경" aria-label="명령 그룹 이름 변경"><i class="bi bi-pencil" aria-hidden="true"></i></button><button class="btn btn-quiet icon-button" id="serial-quick-send-remove-group" type="button" title="명령 그룹 삭제" aria-label="명령 그룹 삭제"><i class="bi bi-trash3" aria-hidden="true"></i></button></div></div>
+                        <select class="form-select" id="serial-quick-send" aria-label="명령 그룹"></select>
+                        <p class="field-hint quick-hint">자주 쓰는 명령을 저장하고 클릭 한 번으로 전송합니다.</p>
+                        <div id="serial-quick-send-content" class="quick-list" aria-label="저장된 명령"></div>
+                        <button id="serial-quick-send-add" class="btn btn-outline-secondary add-command" type="button"><i class="bi bi-plus-lg" aria-hidden="true"></i> 새 명령 추가</button>
+                        <div class="quick-transfer"><button class="btn btn-quiet" id="serial-quick-send-import-btn" type="button"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i> 가져오기</button><button class="btn btn-quiet" id="serial-quick-send-export" type="button"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> 내보내기</button><input type="file" id="serial-quick-send-import" class="visually-hidden" tabindex="-1" accept="application/json,.json" aria-label="명령 JSON 파일"></div>
+                        <div class="command-tip"><i class="bi bi-info-circle" aria-hidden="true"></i><p>입력란에서 명령 내용을 바로 수정할 수 있습니다.<br>이름 변경은 입력란을 두 번 클릭하세요.<br><span>AT 명령에는 보통 CRLF 줄바꿈이 필요합니다.</span></p></div>
+                    </section>
+                    <section class="tab-pane fade" id="nav-options" role="tabpanel" aria-labelledby="nav-options-tab" tabindex="0">
+                        <h3 class="tool-section-title">로그 표시 설정</h3>
+                        <label class="check-label settings-check" for="serial-show-time"><input class="form-check-input" type="checkbox" id="serial-show-time" checked> 시간 표시 (밀리초)</label>
+                        <label class="check-label settings-check" for="serial-wrap"><input class="form-check-input" type="checkbox" id="serial-wrap" checked> 긴 로그 자동 줄바꿈</label>
+                        <label class="field-label" for="serial-log-limit">최대 보관 로그</label><select class="form-select" id="serial-log-limit"><option value="500">500개</option><option value="2000" selected>2,000개</option><option value="10000">10,000개</option></select><p class="field-hint">오래된 항목부터 정리해 브라우저를 가볍게 유지합니다.</p>
+                        <label class="field-label" for="serial-timer-out">수신 데이터 묶음 간격 (ms)</label><input type="number" id="serial-timer-out" class="form-control" min="0" max="5000" step="10" value="50"><p class="field-hint">0이면 즉시 표시합니다. 한글 분할 수신도 이어서 해석합니다.</p>
+                        <div class="tool-divider"></div>
+                        <h3 class="tool-section-title">설정 백업 및 복원</h3><p class="field-hint">연결 설정, 명령 모음, 스크립트를 JSON 파일로 옮길 수 있습니다.</p>
+                        <div class="settings-actions"><button class="btn btn-outline-secondary" id="serial-export" type="button"><i class="bi bi-download" aria-hidden="true"></i> 백업 저장</button><button class="btn btn-outline-secondary" id="serial-import" type="button"><i class="bi bi-upload" aria-hidden="true"></i> 백업 가져오기</button></div><input type="file" id="serial-import-file" class="visually-hidden" tabindex="-1" accept="application/json,.json" aria-label="설정 백업 JSON 파일">
+                        <button class="btn btn-quiet reset-button" id="serial-reset" type="button"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> 모든 설정 초기화</button>
+                        <p class="field-hint">설정은 현재 브라우저에 저장됩니다. 시크릿 모드에서는 창을 닫으면 초기화됩니다.</p>
+                    </section>
+                    <section class="tab-pane fade" id="nav-code" role="tabpanel" aria-labelledby="nav-code-tab" tabindex="0">
+                        <h3 class="tool-section-title">사용자 스크립트</h3><p class="field-hint">수신 데이터를 처리하거나 명령을 자동화합니다. 직접 확인한 코드만 실행하세요.</p>
+                        <div id="serial-code-editor"><label class="visually-hidden" for="serial-code-content">JavaScript 스크립트</label><textarea id="serial-code-content" class="form-control" spellcheck="false" rows="12">// 수신한 데이터의 길이를 로그에 표시합니다.
+// 이 예제는 장치에 데이터를 전송하지 않습니다.
+addEventListener('message', function ({ data }) {
+    if (data.type === 'uart_receive') {
+        postMessage({
+            type: 'log',
+            data: '수신: ' + data.data.length + ' 바이트'
+        });
     }
-})
-setInterval(function(){
-    //定时发送
-    postMessage({type:'uart_send_txt',data:'hello world'});
-},1000);</textarea>
-                        </div>
-                        <div class="mt-2">
-                            <input id='serial-code-select' type='file' class="d-none">
-                            <button class="btn btn-sm btn-outline-secondary me-2" id="serial-code-load"><i
-                                    class="bi bi-folder2-open"></i> 打开文件</button>
-                            <button id="serial-code-run" class="btn btn-primary btn-sm float-end"><i
-                                    class="bi bi-play"></i>
-                                运行</button>
-                        </div>
-                    </div>
+});</textarea></div>
+                        <div class="script-actions"><input id="serial-code-select" type="file" class="visually-hidden" tabindex="-1" accept=".js,.txt,text/javascript,text/plain" aria-label="스크립트 파일"><button class="btn btn-outline-secondary" id="serial-code-load" type="button"><i class="bi bi-folder2-open" aria-hidden="true"></i> 파일 열기</button><button id="serial-code-run" class="btn btn-primary" type="button"><i class="bi bi-play" aria-hidden="true"></i> 실행</button></div>
+                        <details class="script-reference"><summary>스크립트 메시지 규격 <i class="bi bi-chevron-down" aria-hidden="true"></i></summary><p><code>uart_receive</code> 수신 이벤트<br><code>uart_send</code> 바이트 배열 전송<br><code>uart_send_txt</code> UTF-8 텍스트 전송<br><code>uart_send_hex</code> HEX 문자열 전송<br><code>log</code> 시스템 로그 표시</p><p>스크립트는 네트워크 요청을 수행할 수 있습니다. 출처를 모르는 코드는 실행하지 마세요.</p></details>
+                    </section>
                 </div>
             </div>
-        </div>
-    </div>
+        </aside>
+    </main>
 
+    <footer class="app-footer"><span class="footer-engine">Web Serial API</span><span class="footer-browser">데스크톱 Chrome · Edge 권장</span><a href="https://github.com/itldg/web-serial-debug" target="_blank" rel="noopener noreferrer">원본 itldg/web-serial-debug <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a></footer>
 
-
-    <div class="modal fade" id="model-tip" aria-hidden="true" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h1 class="modal-title fs-5" id="modal-title"></h1>
-                    <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body" id="modal-message">
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-primary" data-bs-dismiss="modal">好的</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="model-change-name" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h1 class="modal-title fs-5">名称</h1>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form>
-                        <div class="mb-3">
-                            <label for="model-new-name" class="col-form-label">请输入新的名字:</label>
-                            <input type="text" class="form-control" id="model-new-name">
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" id="model-save-name">保存</button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <div class="modal fade" id="model-tip" aria-hidden="true" tabindex="-1" aria-labelledby="modal-title"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="modal-title">알림</h2><button class="btn-close" data-bs-dismiss="modal" aria-label="닫기" type="button"></button></div><div class="modal-body" id="modal-message"></div><div class="modal-footer"><button class="btn btn-primary" data-bs-dismiss="modal" type="button">확인</button></div></div></div></div>
+    <div class="modal fade" id="model-change-name" tabindex="-1" aria-hidden="true" aria-labelledby="new-name-title"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="new-name-title">이름 설정</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button></div><div class="modal-body"><label for="model-new-name" class="field-label">새 이름</label><input type="text" class="form-control" id="model-new-name" maxlength="80" autocomplete="off"></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button><button type="button" class="btn btn-primary" id="model-save-name">저장</button></div></div></div></div>
+    <div class="modal fade" id="model-help" tabindex="-1" aria-hidden="true" aria-labelledby="help-title"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="help-title">처음 사용하는 시리얼 디버그</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button></div><div class="modal-body help-content">
+        <section><h3>연결부터 전송까지</h3><ol><li>USB 케이블로 장치를 연결하고 <strong>포트 선택</strong>을 누릅니다.</li><li>장치에 맞는 통신 속도와 옵션을 선택한 후 <strong>연결하기</strong>를 누릅니다.</li><li>장치 출력은 로그에서 확인하고, 아래 입력창에서 데이터를 전송합니다.</li></ol><p>Arduino 시리얼 모니터 등 다른 프로그램이 포트를 사용 중이면 먼저 연결을 해제하세요. USB-UART 드라이버가 필요한 장치는 제조사 드라이버를 설치해야 합니다.</p></section>
+        <section><h3>한글이 깨져 보이나요?</h3><p>수신 인코딩을 <strong>UTF-8</strong> 또는 <strong>EUC-KR (CP949)</strong>로 바꿔 보세요. 텍스트 전송은 UTF-8입니다. 다른 송신 인코딩이 필요한 경우 해당 바이트를 HEX로 전송하세요.</p></section>
+        <section><h3>알아두면 편한 단축키</h3><dl class="shortcut-list"><div><dt><kbd>Ctrl</kbd> + <kbd>Enter</kbd></dt><dd>데이터 전송</dd></div><div><dt><kbd>Ctrl</kbd> + <kbd>K</kbd></dt><dd>로그 검색</dd></div><div><dt><kbd>Ctrl</kbd> + <kbd>L</kbd></dt><dd>로그 비우기 (확인 후 삭제)</dd></div><div><dt><kbd>Alt</kbd> + <kbd>↑ / ↓</kbd></dt><dd>전송 입력창에서 기록 탐색</dd></div></dl><p>macOS에서는 Ctrl 대신 ⌘ Command를 사용하세요. 한글 조합 중에는 전송 단축키가 작동하지 않습니다.</p></section>
+        <section><h3>지원 환경과 개인정보</h3><p>데스크톱 Chrome·Edge와 HTTPS 또는 localhost 환경에서 사용하세요. Firefox·Safari·대부분의 모바일 브라우저에서는 실제 시리얼 연결을 지원하지 않습니다. 지원되지 않는 환경에서도 데모는 사용할 수 있습니다.</p><p>로그는 메모리에만 보관되고 설정·전송 기록은 이 브라우저에 저장됩니다. 사이트에는 분석·추적 스크립트가 없습니다. 로그와 설정을 공유하기 전 비밀번호나 장치 식별 정보가 없는지 확인하세요. 사용자 스크립트는 별도 네트워크 요청을 할 수 있으므로 신뢰하는 코드만 실행하세요.</p></section>
+    </div><div class="modal-footer"><a class="btn btn-outline-secondary" href="https://github.com/sioaeko/Web-Serial-Debug-KR#readme" target="_blank" rel="noopener noreferrer">전체 사용 안내 <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a><button class="btn btn-primary" data-bs-dismiss="modal" type="button">시작하기</button></div></div></div></div>
+    <noscript><div class="noscript-warning">이 도구를 사용하려면 브라우저에서 JavaScript를 허용해 주세요.</div></noscript>
+    <script src="vendor/bootstrap/bootstrap.bundle.min.js"></script>
+    <script src="vendor/codemirror/codemirror.min.js"></script>
+    <script src="vendor/codemirror/active-line.min.js"></script>
+    <script src="vendor/codemirror/matchbrackets.min.js"></script>
+    <script src="vendor/codemirror/javascript.min.js"></script>
     <script src="js/ansi_up.min.js"></script>
+    <script src="js/serial-utils.js"></script>
     <script src="js/common.js"></script>
-
 </body>
-
 </html>

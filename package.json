@@ -1,0 +1,31 @@
+{
+  "name": "web-serial-debug-kr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "설치 없이 사용하는 한국어 Web Serial 디버깅 도구",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sioaeko/Web-Serial-Debug-KR.git"
+  },
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0"
+  },
+  "scripts": {
+    "vendor": "node scripts/vendor.cjs",
+    "check": "node scripts/check.cjs",
+    "test": "node --test tests/*.test.cjs",
+    "build": "node scripts/build.cjs",
+    "dev": "node scripts/serve.cjs",
+    "preview": "node scripts/serve.cjs --root dist"
+  },
+  "dependencies": {
+    "ansi_up": "5.1.0",
+    "bootstrap": "5.3.8",
+    "bootstrap-icons": "1.13.1",
+    "codemirror": "5.65.21"
+  },
+  "devDependencies": {
+    "jsdom": "29.1.1"
+  }
+}

@@ -1,0 +1,17 @@
+Web Serial Debug KR
+https://github.com/sioaeko/Web-Serial-Debug-KR
+
+This product is a modified distribution of Web Serial Debug by itldg and
+its contributors: https://github.com/itldg/web-serial-debug
+
+The upstream project is licensed under the Apache License, Version 2.0.
+The original LICENSE file is retained without modification.
+
+Modifications by the Web Serial Debug KR contributors, 2026:
+Korean localization and documentation; serial presets and receive encodings;
+log inspection and command-history improvements; safer local configuration
+and script controls; an explicitly simulated demo; self-hosted dependencies;
+removal of third-party analytics; and a tested GitHub Pages build workflow.
+
+This is an independent community fork, not an official upstream release.
+Third-party component licenses are listed in THIRD_PARTY_NOTICES.md and vendor/.
