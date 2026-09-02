@@ -340,18 +340,6 @@ kbd {
     line-height: 1.2;
     font-weight: 700;
     letter-spacing: -.2px;
-    display: flex;
-    align-items: baseline;
-}
-.edition {
-    display: inline-block;
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--accent);
-    background: transparent;
-    padding: 0;
-    vertical-align: baseline;
-    margin-left: 4px;
 }
 .header-actions {
     display: flex;
