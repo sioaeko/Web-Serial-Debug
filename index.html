@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#f0f2f5">
     <meta name="description" content="설치 없이 브라우저에서 사용하는 한국어 웹 시리얼 디버거. Arduino, ESP32, USB-UART 연결, 한글 로그, HEX 전송, 명령 모음을 지원합니다.">
-    <title>Web Serial Debug KR · 웹 시리얼 디버거</title>
+    <title>Web Serial Debug</title>
     <link rel="icon" href="imgs/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css">
     <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.css">
@@ -20,7 +20,7 @@
     <header class="app-header">
         <div class="brand">
             <span class="brand-symbol" aria-hidden="true"><img src="imgs/logo.svg" width="22" height="22" alt=""></span>
-            <div class="brand-copy"><h1>시리얼 디버그</h1></div>
+            <div class="brand-copy"><h1>Web Serial Debug</h1></div>
         </div>
         <nav class="header-actions" aria-label="앱 메뉴">
             <button class="btn btn-quiet icon-button" type="button" data-bs-toggle="modal" data-bs-target="#model-help" title="사용 안내 및 단축키" aria-label="사용 안내 및 단축키"><i class="bi bi-question-circle" aria-hidden="true"></i></button>
@@ -153,13 +153,15 @@
                         </div>
                         <p class="field-hint funsr-draft-hint">보낼 값(초안)만 변경하며 즉시 전송하지 않습니다.</p>
 
-                        <div class="funsr-preview-row">
-                            <span class="field-label">전송 명령 미리보기</span>
-                            <span class="funsr-preview-mode">텍스트 · CRLF</span>
-                        </div>
-                        <div class="funsr-command-line">
-                            <code id="funsr-speed-command" class="funsr-command-text">DKP1.2</code>
-                            <span class="funsr-command-desc">일반 전송 설정과 독립</span>
+                        <div class="funsr-preview-box">
+                            <div class="funsr-preview-row">
+                                <span class="field-label">전송 명령 미리보기</span>
+                                <span class="funsr-preview-mode">텍스트 · CRLF</span>
+                            </div>
+                            <div class="funsr-command-line">
+                                <code id="funsr-speed-command" class="funsr-command-text">DKP1.2</code>
+                                <span class="funsr-command-desc">일반 전송 설정과 독립</span>
+                            </div>
                         </div>
 
                         <label class="check-label funsr-confirm-label" for="funsr-device-confirm">

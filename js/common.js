@@ -62,7 +62,7 @@
             ? '이 브라우저는 시리얼 연결을 지원하지 않습니다. 실제 연결에는 데스크톱 Chrome·Edge를 사용해 주세요.'
             : '시리얼 연결에는 HTTPS 또는 localhost가 필요합니다. 안전한 주소로 다시 접속해 주세요.'
     }
-    function message(text, title = 'Web Serial Debug KR') {
+    function message(text, title = 'Web Serial Debug') {
         if (tipModal) {
             $('modal-title').textContent = title
             $('modal-message').textContent = String(text).slice(0, 4000)

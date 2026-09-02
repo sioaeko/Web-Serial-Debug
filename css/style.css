@@ -1179,7 +1179,7 @@ summary::-webkit-details-marker { display: none; }
 }
 
 .funsr-range-wrap {
-    margin: 8px 0 6px;
+    margin: 10px 0 0;
     display: flex;
     align-items: center;
 }
@@ -1251,7 +1251,7 @@ summary::-webkit-details-marker { display: none; }
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
-    margin-top: 4px;
+    margin-top: 8px;
 }
 
 .funsr-preset-btn {
@@ -1262,19 +1262,29 @@ summary::-webkit-details-marker { display: none; }
 }
 
 .funsr-draft-hint {
-    margin-top: 6px;
-    margin-bottom: 12px;
+    margin-top: 8px;
+    margin-bottom: 14px;
 }
 
-.funsr-preview-row {
-    margin-top: 6px;
+.funsr-preview-box {
+    padding: 10px 12px;
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.funsr-preview-box .funsr-preview-row {
+    margin: 0 0 8px;
+}
+
+.funsr-preview-box .funsr-command-line {
+    margin: 0;
 }
 
 .funsr-command-line {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    margin-bottom: 12px;
     flex-wrap: wrap;
 }
 
@@ -1302,7 +1312,7 @@ summary::-webkit-details-marker { display: none; }
     color: var(--text);
     align-items: flex-start;
     gap: 7px;
-    margin-bottom: 10px;
+    margin: 12px 0 10px;
 }
 
 .funsr-confirm-label .form-check-input {
@@ -1335,12 +1345,16 @@ summary::-webkit-details-marker { display: none; }
     font-size: 13px;
     font-weight: 600;
     color: var(--text);
-    margin-bottom: 2px;
+    padding: 8px 10px;
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-bottom: 8px;
 }
 
 .funsr-notice {
-    margin-top: 14px;
-    padding-top: 10px;
+    margin-top: 16px;
+    padding-top: 12px;
     border-top: 1px solid var(--border);
 }
 

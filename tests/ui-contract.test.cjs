@@ -91,6 +91,20 @@ async function fixture(t) {
   return { window, document: window.document, byId };
 }
 
+test('the browser tab, header and default notification use the concise Web Serial Debug name', async (t) => {
+  const { document, byId } = await fixture(t);
+  assert.equal(document.title, 'Web Serial Debug');
+  assert.equal(document.querySelector('.brand-copy h1').textContent.trim(), 'Web Serial Debug');
+  const dialog = byId('model-tip');
+  const shown = nextEvent(dialog, 'shown.bs.modal');
+  byId('serial-copy').click(); // Empty logs show a local notice, without clipboard access.
+  await shown;
+  assert.equal(byId('modal-title').textContent, 'Web Serial Debug');
+  const hidden = nextEvent(dialog, 'hidden.bs.modal');
+  dialog.querySelector('[data-bs-dismiss="modal"]').click();
+  await hidden;
+});
+
 test('local Bootstrap switches all tool tabs and keeps panel targets and ARIA selection in sync', async (t) => {
   const { window, byId } = await fixture(t);
   const tabs = ['nav-funsr', 'nav-quick-send', 'nav-options', 'nav-code'].map((id) => ({
