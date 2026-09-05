@@ -8,6 +8,21 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const KEY = 'web-serial-debug:language';
 
+test('link preview descriptions stay English in static HTML and every UI language', (t) => {
+  const w = fixture(t, ['ko']);
+  const selectors = ['meta[name="description"]', 'meta[property="og:description"]', 'meta[name="twitter:description"]'];
+  const expected = 'A browser-based serial debugger with FUNSR PRO settings, saved commands, and text/HEX logs. Available in English, Korean, and Simplified Chinese.';
+  const staticDom = new JSDOM(read('index.html'));
+  t.after(() => staticDom.window.close());
+  for (const selector of selectors) assert.equal(staticDom.window.document.querySelector(selector).content, expected);
+  for (const language of ['ko', 'en', 'zh-CN', 'auto']) {
+    w.SerialI18n.setLanguage(language);
+    for (const selector of selectors) assert.equal(w.document.querySelector(selector).content, expected);
+  }
+  assert.equal(w.document.querySelector('meta[property="og:url"]').content, 'https://sioaeko.github.io/Web-Serial-Debug/');
+  for (const selector of ['meta[property="og:title"]', 'meta[name="twitter:title"]']) assert.equal(w.document.querySelector(selector).content, 'Web Serial Debug');
+});
+
 function fixture(t, languages = ['en-US'], stored, blocked = false) {
   const dom = new JSDOM(read('index.html'), { url: 'https://locale.invalid/Web-Serial-Debug/', runScripts: 'outside-only' });
   const w = dom.window;

@@ -71,10 +71,10 @@
             const node = walker.currentNode
             if (!node.parentElement.closest('script, style, textarea, pre, code, noscript, [translate="no"]')) bind(node, node.nodeValue)
         }
-        for (const element of document.querySelectorAll('[title], [aria-label], [placeholder], meta[name="description"]')) {
+        // Sharing metadata stays English regardless of the selected UI language.
+        for (const element of document.querySelectorAll('[title], [aria-label], [placeholder]')) {
             if (element.closest('[translate="no"]')) continue
             for (const attribute of ['title', 'aria-label', 'placeholder']) if (element.hasAttribute(attribute)) bind(element, element.getAttribute(attribute), attribute)
-            if (element.matches('meta[name="description"]')) bind(element, element.content, 'content')
         }
         apply()
         document.getElementById('serial-language')?.addEventListener('change', (event) => setLanguage(event.target.value))
