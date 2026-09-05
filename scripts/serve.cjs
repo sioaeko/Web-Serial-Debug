@@ -14,7 +14,7 @@ const MIME_TYPES = {
   '.md': 'text/plain; charset=utf-8', '.txt': 'text/plain; charset=utf-8'
 };
 
-function createStaticServer({ root = PROJECT_ROOT, basePath = '/Web-Serial-Debug-KR/' } = {}) {
+function createStaticServer({ root = PROJECT_ROOT, basePath = '/Web-Serial-Debug/' } = {}) {
   const publicRoot = fs.realpathSync(path.resolve(root));
   const base = `/${basePath.split('/').filter(Boolean).join('/')}/`.replace('//', '/');
   return http.createServer((request, response) => {
@@ -64,11 +64,11 @@ function createStaticServer({ root = PROJECT_ROOT, basePath = '/Web-Serial-Debug
 }
 
 function readArguments(args) {
-  const options = { root: PROJECT_ROOT, basePath: '/Web-Serial-Debug-KR/', host: '127.0.0.1', port: 4173 };
+  const options = { root: PROJECT_ROOT, basePath: '/Web-Serial-Debug/', host: '127.0.0.1', port: 4173 };
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index];
     const value = args[index + 1];
-    if (!['--root', '--base', '--host', '--port'].includes(name) || !value) throw new Error('Usage: npm run dev -- [--root dist] [--base /Web-Serial-Debug-KR/] [--host 127.0.0.1] [--port 4173]');
+    if (!['--root', '--base', '--host', '--port'].includes(name) || !value) throw new Error('Usage: npm run dev -- [--root dist] [--base /Web-Serial-Debug/] [--host 127.0.0.1] [--port 4173]');
     if (name === '--root') options.root = path.resolve(PROJECT_ROOT, value);
     if (name === '--base') options.basePath = value;
     if (name === '--host') options.host = value;
@@ -82,7 +82,7 @@ if (require.main === module) {
   const options = readArguments(process.argv.slice(2));
   const server = createStaticServer(options);
   server.on('error', error => { console.error(error.message); process.exitCode = 1; });
-  server.listen(options.port, options.host, () => console.log(`Web Serial Debug KR: http://${options.host}:${options.port}${options.basePath}\nServing public files only from ${options.root}. Press Ctrl+C to stop.`));
+  server.listen(options.port, options.host, () => console.log(`Web Serial Debug: http://${options.host}:${options.port}${options.basePath}\nServing public files only from ${options.root}. Press Ctrl+C to stop.`));
 }
 
 module.exports = { createStaticServer, readArguments };

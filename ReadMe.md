@@ -1,8 +1,22 @@
-# Web Serial Debug KR
+# Web Serial Debug
 
-설치 없이 브라우저에서 사용하는 한국어 시리얼 모니터입니다. [itldg/web-serial-debug](https://github.com/itldg/web-serial-debug)를 정식 Fork하여 한글화하고 국내 사용 환경에 맞는 편의 기능을 더했습니다.
+Browser-based serial monitor with **한국어 / English / 简体中文** UI. A fork of [itldg/web-serial-debug](https://github.com/itldg/web-serial-debug), with validated settings, bounded logs, quick commands and explicit FUNSR PRO configuration.
 
-**[웹에서 열기](https://sioaeko.github.io/Web-Serial-Debug-KR/)** · [소스 코드](https://github.com/sioaeko/Web-Serial-Debug-KR)
+**[웹에서 열기](https://sioaeko.github.io/Web-Serial-Debug/)** · [소스 코드](https://github.com/sioaeko/Web-Serial-Debug)
+
+## Language / 언어 / 语言
+
+Use the language selector in the header. **Auto** follows the first supported browser language (English fallback). Your selection is saved in this browser and changes the UI immediately without reconnecting or sending anything. Device traffic, saved command names/content and script source are never translated. Language selection is separate from settings backups.
+
+상단 언어 선택에서 한국어·영어·중국어(간체)를 고를 수 있습니다. **자동**은 브라우저의 지원 언어를 따르며, 지원 언어가 없으면 영어를 사용합니다. 선택은 브라우저에 저장됩니다. 언어를 바꿔도 연결, 입력 중인 명령, 설정 초안, 전송 기록과 스크립트는 유지되며 전송을 시작하지 않습니다.
+
+使用顶部的语言选择器切换韩语、英语或简体中文。**自动**跟随浏览器支持的语言，无匹配时使用英语。语言选择会保存在浏览器中。切换语言不会重新连接、发送命令或更改设备数据、已保存命令和脚本。
+
+## Quick start
+
+Open the site in desktop Chrome or Edge, connect a USB serial device, choose **Select port**, set the baud rate and other parameters required by your device, then connect. HTTPS or localhost is required. Sending text uses UTF-8 plus the selected line ending; HEX sends raw bytes. Presets do not detect device settings.
+
+FUNSR controls are specifically for **FUNSR PRO Kp configuration**, not live motor speed, RPM or a percentage. Adjust only while the device is stationary. Confirm the device yourself before sending one DKP command. Physical-device compatibility and operation have not been verified; other models are not assumed compatible.
 
 ## 시작하기
 
@@ -13,9 +27,9 @@
 
 Web Serial을 지원하는 브라우저와 **HTTPS 또는 localhost/127.0.0.1** 환경이 필요합니다. Firefox, Safari 및 모바일 브라우저는 이 프로젝트의 지원 대상이 아닙니다. USB-시리얼 드라이버가 필요한 장치는 운영체제에 드라이버가 설치되어 있어야 합니다. 다른 프로그램이 포트를 사용 중이면 먼저 해당 프로그램의 연결을 해제하세요.
 
-## 한국어판 기능
+## 주요 기능
 
-- 설정, 안내, 오류 메시지와 스크립트 도움말 한글화
+- 한국어·영어·중국어(간체) 설정, 안내, 오류 메시지와 스크립트 도움말
 - Arduino, ESP32 AT, Modbus RTU 통신 설정 프리셋
 - FUNSR PRO DKP 설정값 선택·단발 전송과 기기 응답 구분 표시
 - 수신 텍스트 UTF-8 / EUC-KR / Windows-1252 인코딩 선택
@@ -108,7 +122,7 @@ npm run build
 npm run dev
 ```
 
-개발 주소는 [http://127.0.0.1:4173/Web-Serial-Debug-KR/](http://127.0.0.1:4173/Web-Serial-Debug-KR/)입니다. `npm run preview`는 빌드한 `dist/`를 같은 주소로 제공합니다. 포트 변경은 `npm run dev -- --port 4174`처럼 지정합니다. 개발 서버는 읽기 전용이며 공개 파일만 제공합니다.
+개발 주소는 [http://127.0.0.1:4173/Web-Serial-Debug/](http://127.0.0.1:4173/Web-Serial-Debug/)입니다. `npm run preview`는 빌드한 `dist/`를 같은 주소로 제공합니다. 포트 변경은 `npm run dev -- --port 4174`처럼 지정합니다. 개발 서버는 읽기 전용이며 공개 파일만 제공합니다.
 
 - `npm run vendor`: 버전이 고정된 로컬 npm 패키지에서 실행 자산과 라이선스를 복사합니다.
 - `npm run check`: JavaScript 문법, 중복 ID, 한국어 문서 선언, 로컬 자산 경로 및 알려진 추적 코드 잔존 여부를 검사합니다.

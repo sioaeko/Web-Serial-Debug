@@ -68,6 +68,21 @@
   const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
   const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 
+  function validationError(Type, key, parameters = {}) {
+    // Keep the original Korean Error.message for API compatibility. The UI
+    // renders this structured description in its current language instead.
+    const values = { ...parameters };
+    if (typeof values.label === 'string') values.label = { key: values.label, values: {} };
+    const localizedMessage = { key, values };
+    function original(value) {
+      if (!value || typeof value !== 'object' || typeof value.key !== 'string') return String(value);
+      return value.key.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, name) => own(value.values, name) ? original(value.values[name]) : token);
+    }
+    const error = new Type(original(localizedMessage));
+    error.localizedMessage = localizedMessage;
+    return error;
+  }
+
   function isRecord(value) {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
     const prototype = Object.getPrototypeOf(value);
@@ -75,11 +90,11 @@
   }
 
   function requireRecord(value, label) {
-    if (!isRecord(value)) throw new TypeError(`${label}은(는) 올바른 객체여야 합니다.`);
+    if (!isRecord(value)) throw validationError(TypeError, '{label}은(는) 올바른 객체여야 합니다.', { label });
     for (const key of Reflect.ownKeys(value)) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (typeof key !== 'string' || FORBIDDEN_KEYS.has(key) || !own(descriptor, 'value')) {
-        throw new TypeError(`${label}에 허용되지 않는 속성이 있습니다.`);
+        throw validationError(TypeError, '{label}에 허용되지 않는 속성이 있습니다.', { label });
       }
     }
     return value;
@@ -87,17 +102,17 @@
 
   function requireDenseArray(value, label, minimum, maximum) {
     if (!Array.isArray(value) || value.length < minimum || value.length > maximum) {
-      throw new RangeError(`${label}은(는) ${minimum}~${maximum}개의 배열이어야 합니다.`);
+      throw validationError(RangeError, '{label}은(는) {minimum}~{maximum}개의 배열이어야 합니다.', { label, minimum, maximum });
     }
     for (const key of Reflect.ownKeys(value)) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (key === 'length') continue;
       if (typeof key !== 'string' || !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length || !own(descriptor, 'value')) {
-        throw new TypeError(`${label}에 허용되지 않는 속성이 있습니다.`);
+        throw validationError(TypeError, '{label}에 허용되지 않는 속성이 있습니다.', { label });
       }
     }
     for (let index = 0; index < value.length; index += 1) {
-      if (!own(value, index)) throw new TypeError(`${label}에 비어 있는 항목이 있습니다.`);
+      if (!own(value, index)) throw validationError(TypeError, '{label}에 비어 있는 항목이 있습니다.', { label });
     }
     return value;
   }
@@ -115,7 +130,7 @@
   function integerInRange(value, minimum, maximum, label) {
     const number = finiteNumber(value);
     if (number === null || !Number.isInteger(number) || number < minimum || number > maximum) {
-      throw new RangeError(`${label}은(는) ${minimum.toLocaleString('ko-KR')}~${maximum.toLocaleString('ko-KR')} 범위의 정수여야 합니다.`);
+      throw validationError(RangeError, '{label}은(는) {minimum}~{maximum} 범위의 정수여야 합니다.', { label, minimum: minimum.toLocaleString('ko-KR'), maximum: maximum.toLocaleString('ko-KR') });
     }
     return number;
   }
@@ -126,7 +141,7 @@
   }
 
   function enumValue(value, allowed, label) {
-    if (!allowed.includes(value)) throw new RangeError(`${label} 값이 올바르지 않습니다.`);
+    if (!allowed.includes(value)) throw validationError(RangeError, '{label} 값이 올바르지 않습니다.', { label });
     return value;
   }
 
@@ -136,16 +151,16 @@
     if (Array.isArray(value)) {
       for (const byte of value) {
         if (!Number.isInteger(byte) || byte < 0 || byte > 255) {
-          throw new TypeError('바이트는 0~255 범위의 정수여야 합니다.');
+          throw validationError(TypeError, '바이트는 0~255 범위의 정수여야 합니다.');
         }
       }
       return Uint8Array.from(value);
     }
-    throw new TypeError('바이트 배열 또는 버퍼가 필요합니다.');
+    throw validationError(TypeError, '바이트 배열 또는 버퍼가 필요합니다.');
   }
 
   function parseHex(value) {
-    if (typeof value !== 'string') throw new TypeError('HEX 입력은 문자열이어야 합니다.');
+    if (typeof value !== 'string') throw validationError(TypeError, 'HEX 입력은 문자열이어야 합니다.');
     const text = value.trim();
     if (text === '') return new Uint8Array();
     const bytes = [];
@@ -157,9 +172,9 @@
         continue;
       }
       if (!/^[\da-f]+$/i.test(token)) {
-        throw new Error('HEX에는 0~9, A~F와 공백·쉼표만 입력하세요. 0x 접두사는 바이트마다 붙여 주세요.');
+        throw validationError(Error, 'HEX에는 0~9, A~F와 공백·쉼표만 입력하세요. 0x 접두사는 바이트마다 붙여 주세요.');
       }
-      if (token.length % 2 !== 0) throw new Error('HEX는 두 자리씩 입력해 주세요. 예: 48 65 또는 4865');
+      if (token.length % 2 !== 0) throw validationError(Error, 'HEX는 두 자리씩 입력해 주세요. 예: 48 65 또는 4865');
       for (let index = 0; index < token.length; index += 2) {
         bytes.push(Number.parseInt(token.slice(index, index + 2), 16));
       }
@@ -188,21 +203,21 @@
     if (typeof value === 'string') {
       const text = value.trim();
       if (text.length > 32 || !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(text)) {
-        throw new TypeError('FUNSR PRO 설정값은 0.5~5.0 범위의 십진수로 입력해 주세요.');
+        throw validationError(TypeError, 'FUNSR PRO 설정값은 0.5~5.0 범위의 십진수로 입력해 주세요.');
       }
       const fraction = text.split('.')[1] || '';
-      if (/[1-9]/.test(fraction.slice(1))) throw new RangeError('FUNSR PRO 설정값은 0.1 단위로 입력해 주세요.');
+      if (/[1-9]/.test(fraction.slice(1))) throw validationError(RangeError, 'FUNSR PRO 설정값은 0.1 단위로 입력해 주세요.');
       number = Number(text);
     } else if (typeof value === 'number') {
       number = value;
     } else {
-      throw new TypeError('FUNSR PRO 설정값은 숫자여야 합니다.');
+      throw validationError(TypeError, 'FUNSR PRO 설정값은 숫자여야 합니다.');
     }
     if (!Number.isFinite(number) || number < FUNSR_KP_LIMITS.min || number > FUNSR_KP_LIMITS.max) {
-      throw new RangeError('FUNSR PRO 설정값은 0.5~5.0 범위여야 합니다.');
+      throw validationError(RangeError, 'FUNSR PRO 설정값은 0.5~5.0 범위여야 합니다.');
     }
     const tenths = Math.round(number * 10);
-    if (Math.abs(number * 10 - tenths) > 1e-9) throw new RangeError('FUNSR PRO 설정값은 0.1 단위로 입력해 주세요.');
+    if (Math.abs(number * 10 - tenths) > 1e-9) throw validationError(RangeError, 'FUNSR PRO 설정값은 0.1 단위로 입력해 주세요.');
     return tenths / 10;
   }
 
@@ -303,10 +318,10 @@
   }
 
   function boundedString(value, label, maximum, allowEmpty = true, trim = false) {
-    if (typeof value !== 'string') throw new TypeError(`${label}은(는) 문자열이어야 합니다.`);
+    if (typeof value !== 'string') throw validationError(TypeError, '{label}은(는) 문자열이어야 합니다.', { label });
     const result = trim ? value.trim() : value;
     if ((!allowEmpty && result.length === 0) || result.length > maximum) {
-      throw new RangeError(`${label}은(는) ${allowEmpty ? '0' : '1'}~${maximum.toLocaleString('ko-KR')}자여야 합니다.`);
+      throw validationError(RangeError, '{label}은(는) {minimum}~{maximum}자여야 합니다.', { label, minimum: allowEmpty ? '0' : '1', maximum: maximum.toLocaleString('ko-KR') });
     }
     return result;
   }
@@ -321,14 +336,14 @@
       requireDenseArray(own(group, 'list') ? group.list : undefined, '빠른 전송 그룹의 명령 목록', 0, LIMITS.maxItemsPerGroup);
       totalItems += group.list.length;
       totalText += name.length;
-      if (totalItems > LIMITS.maxTotalItems) throw new RangeError(`빠른 전송 명령은 전체 ${LIMITS.maxTotalItems}개를 넘을 수 없습니다.`);
+      if (totalItems > LIMITS.maxTotalItems) throw validationError(RangeError, '빠른 전송 명령은 전체 {maximum}개를 넘을 수 없습니다.', { maximum: LIMITS.maxTotalItems });
       const list = group.list.map((item) => {
         requireRecord(item, '빠른 전송 명령');
         const itemName = boundedString(own(item, 'name') ? item.name : undefined, '빠른 전송 명령 이름', LIMITS.maxNameLength, false, true);
         const content = boundedString(own(item, 'content') ? item.content : undefined, '빠른 전송 내용', LIMITS.maxContentLength);
-        if (own(item, 'hex') && typeof item.hex !== 'boolean') throw new TypeError('빠른 전송의 HEX 여부는 참 또는 거짓이어야 합니다.');
+        if (own(item, 'hex') && typeof item.hex !== 'boolean') throw validationError(TypeError, '빠른 전송의 HEX 여부는 참 또는 거짓이어야 합니다.');
         totalText += itemName.length + content.length;
-        if (totalText > LIMITS.maxQuickTextLength) throw new RangeError('빠른 전송 내용의 전체 크기가 너무 큽니다.');
+        if (totalText > LIMITS.maxQuickTextLength) throw validationError(RangeError, '빠른 전송 내용의 전체 크기가 너무 큽니다.');
         return { name: itemName, content, hex: own(item, 'hex') ? item.hex : false };
       });
       return { name, list };
@@ -336,11 +351,11 @@
   }
 
   function parseJson(value, label) {
-    if (value.length > LIMITS.maxConfigLength) throw new RangeError(`${label}의 크기가 너무 큽니다.`);
+    if (value.length > LIMITS.maxConfigLength) throw validationError(RangeError, '{label}의 크기가 너무 큽니다.', { label });
     try {
       return JSON.parse(value);
     } catch {
-      throw new SyntaxError(`${label}의 JSON 형식이 올바르지 않습니다.`);
+      throw validationError(SyntaxError, '{label}의 JSON 형식이 올바르지 않습니다.', { label });
     }
   }
 
@@ -350,26 +365,26 @@
     let textLength = 0;
     function visit(item, depth) {
       nodes += 1;
-      if (depth > 20 || nodes > 20000) throw new RangeError('설정 파일의 구조가 너무 복잡합니다.');
+      if (depth > 20 || nodes > 20000) throw validationError(RangeError, '설정 파일의 구조가 너무 복잡합니다.');
       if (typeof item === 'string') {
         textLength += item.length;
-        if (textLength > LIMITS.maxConfigLength) throw new RangeError('설정 파일의 전체 크기가 너무 큽니다.');
+        if (textLength > LIMITS.maxConfigLength) throw validationError(RangeError, '설정 파일의 전체 크기가 너무 큽니다.');
         return;
       }
       if (item === null || typeof item === 'boolean' || (typeof item === 'number' && Number.isFinite(item))) return;
-      if (typeof item !== 'object') throw new TypeError('설정 파일에 허용되지 않는 값이 있습니다.');
-      if (active.has(item)) throw new TypeError('설정 파일에는 순환 참조를 사용할 수 없습니다.');
+      if (typeof item !== 'object') throw validationError(TypeError, '설정 파일에 허용되지 않는 값이 있습니다.');
+      if (active.has(item)) throw validationError(TypeError, '설정 파일에는 순환 참조를 사용할 수 없습니다.');
       const isArray = Array.isArray(item);
       if (!isArray) requireRecord(item, '설정 파일');
       active.add(item);
       for (const key of Reflect.ownKeys(item)) {
         const descriptor = Object.getOwnPropertyDescriptor(item, key);
         if (typeof key !== 'string' || FORBIDDEN_KEYS.has(key) || !own(descriptor, 'value')) {
-          throw new TypeError('설정 파일에 허용되지 않는 속성이 있습니다.');
+          throw validationError(TypeError, '설정 파일에 허용되지 않는 속성이 있습니다.');
         }
         if (isArray && key === 'length') continue;
         textLength += key.length;
-        if (textLength > LIMITS.maxConfigLength) throw new RangeError('설정 파일의 전체 크기가 너무 큽니다.');
+        if (textLength > LIMITS.maxConfigLength) throw validationError(RangeError, '설정 파일의 전체 크기가 너무 큽니다.');
         visit(descriptor.value, depth + 1);
       }
       active.delete(item);
@@ -380,13 +395,13 @@
   function validateImportedToolOptions(input) {
     requireRecord(input, '도구 설정');
     for (const key of [...BOOLEAN_OPTIONS, 'addCRLF']) {
-      if (own(input, key) && typeof input[key] !== 'boolean') throw new TypeError(`도구 설정의 ${key} 값은 참 또는 거짓이어야 합니다.`);
+      if (own(input, key) && typeof input[key] !== 'boolean') throw validationError(TypeError, '도구 설정의 {key} 값은 참 또는 거짓이어야 합니다.', { key });
     }
     for (const [key, allowed] of Object.entries(TOOL_ENUMS)) {
-      if (own(input, key)) enumValue(input[key], allowed, `도구 설정의 ${key}`);
+      if (own(input, key)) enumValue(input[key], allowed, { key: '도구 설정의 {key}', values: { key } });
     }
     for (const key of Object.keys(NUMBER_OPTIONS)) {
-      if (own(input, key) && finiteNumber(input[key]) === null) throw new TypeError(`도구 설정의 ${key} 값은 유효한 숫자여야 합니다.`);
+      if (own(input, key) && finiteNumber(input[key]) === null) throw validationError(TypeError, '도구 설정의 {key} 값은 유효한 숫자여야 합니다.', { key });
     }
     if (own(input, 'sendContent')) boundedString(input.sendContent, '전송 내용', LIMITS.maxContentLength);
     return normalizeToolOptions(input);
@@ -396,13 +411,13 @@
     requireRecord(value, '전송 기록');
     const content = boundedString(own(value, 'content') ? value.content : (own(value, 'command') ? value.command : undefined), '전송 기록의 내용', LIMITS.maxContentLength);
     const hex = own(value, 'hex') ? value.hex : false;
-    if (typeof hex !== 'boolean') throw new TypeError('전송 기록의 HEX 여부는 참 또는 거짓이어야 합니다.');
+    if (typeof hex !== 'boolean') throw validationError(TypeError, '전송 기록의 HEX 여부는 참 또는 거짓이어야 합니다.');
     const lineEnding = own(value, 'lineEnding') ? value.lineEnding : (own(value, 'ending') ? value.ending : 'none');
     enumValue(lineEnding, TOOL_ENUMS.lineEnding, '전송 기록의 줄바꿈');
     const rawTime = own(value, 'time') ? value.time : Date.now();
-    if (typeof rawTime !== 'string' && typeof rawTime !== 'number') throw new TypeError('전송 기록의 시간이 올바르지 않습니다.');
+    if (typeof rawTime !== 'string' && typeof rawTime !== 'number') throw validationError(TypeError, '전송 기록의 시간이 올바르지 않습니다.');
     const date = new Date(rawTime);
-    if (!Number.isFinite(date.getTime())) throw new TypeError('전송 기록의 시간이 올바르지 않습니다.');
+    if (!Number.isFinite(date.getTime())) throw validationError(TypeError, '전송 기록의 시간이 올바르지 않습니다.');
     return { content, hex, lineEnding, time: date.toISOString() };
   }
 
@@ -435,9 +450,9 @@
     assertJsonData(input);
     requireRecord(input, '설정 파일');
     const required = ['serialOptions', 'toolOptions', 'quickSendList', 'code'];
-    if (required.some((key) => !own(input, key))) throw new TypeError('올바른 설정 파일이 아닙니다. 시리얼·도구·빠른 전송·스크립트 설정이 모두 필요합니다.');
+    if (required.some((key) => !own(input, key))) throw validationError(TypeError, '올바른 설정 파일이 아닙니다. 시리얼·도구·빠른 전송·스크립트 설정이 모두 필요합니다.');
     const versioned = own(input, 'schemaVersion');
-    if (versioned && input.schemaVersion !== 1) throw new RangeError('지원하지 않는 설정 파일 버전입니다.');
+    if (versioned && input.schemaVersion !== 1) throw validationError(RangeError, '지원하지 않는 설정 파일 버전입니다.');
 
     function field(key, fallback) {
       let result = input[key];
@@ -469,7 +484,7 @@
       try {
         return new TextDecoder(encoding, { fatal: false });
       } catch {
-        throw new Error('이 브라우저에서 선택한 인코딩을 지원하지 않습니다.');
+        throw validationError(Error, '이 브라우저에서 선택한 인코딩을 지원하지 않습니다.');
       }
     };
     let decoder = create();

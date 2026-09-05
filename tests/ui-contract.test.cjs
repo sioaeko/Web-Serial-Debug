@@ -12,6 +12,8 @@ const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const scripts = [
   'vendor/bootstrap/bootstrap.bundle.min.js',
+  'js/messages.js',
+  'js/i18n.js',
   'js/serial-utils.js',
   'js/common.js',
 ].map((file) => ({ file, source: fs.readFileSync(path.join(root, file), 'utf8') }));
@@ -44,12 +46,13 @@ async function fixture(t) {
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('jsdomError', (error) => errors.push(String(error.stack || error)));
   const dom = new JSDOM(html, {
-    url: 'https://ui-contract.invalid/Web-Serial-Debug-KR/',
+    url: 'https://ui-contract.invalid/Web-Serial-Debug/',
     runScripts: 'outside-only', // Script/link URLs in the document never load.
     pretendToBeVisual: true, // Supplies requestAnimationFrame, not a renderer.
     virtualConsole,
   });
   const { window } = dom;
+  Object.defineProperty(window.navigator, 'languages', { value: ['ko-KR'] });
   const serial = new window.EventTarget();
   serial.getPorts = async () => { calls.serial += 1; return []; };
   serial.requestPort = async () => { calls.serial += 1; throw new Error('Serial access is outside this UI test'); };

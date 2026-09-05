@@ -157,17 +157,18 @@ function installLibraryAdapters(window, calls) {
   };
 }
 
-async function runtime(t, { supported = true, secure = true, storage = {}, systemDark = false, blockedStorage = false } = {}) {
+async function runtime(t, { supported = true, secure = true, storage = {}, systemDark = false, blockedStorage = false, languages = ['ko-KR'] } = {}) {
   const errors = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('jsdomError', (error) => errors.push(error));
   const dom = new JSDOM(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), {
-    url: 'https://serial-test.example/Web-Serial-Debug-KR/',
+    url: 'https://serial-test.example/Web-Serial-Debug/',
     runScripts: 'outside-only',
     pretendToBeVisual: true,
     virtualConsole,
   });
   const { window } = dom;
+  Object.defineProperty(window.navigator, 'languages', { value: languages, configurable: true });
   const calls = { requestPort: 0, getPorts: 0, worker: 0, workerTerminated: 0, modals: 0, alerts: [], confirms: [] };
   const workers = [];
   const ports = [fakePort(window, 0), fakePort(window, 1)];
@@ -254,6 +255,7 @@ async function runtime(t, { supported = true, secure = true, storage = {}, syste
   for (const script of window.document.querySelectorAll('script:not([src])')) window.eval(script.textContent);
   env.initialTheme = window.document.documentElement.dataset.theme;
   env.initialThemeColor = window.document.querySelector('meta[name="theme-color"]').content;
+  for (const file of ['messages', 'i18n']) window.eval(fs.readFileSync(path.join(ROOT, 'js/' + file + '.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(ROOT, 'js/serial-utils.js'), 'utf8') + '\n//# sourceURL=serial-utils.js');
   window.eval(fs.readFileSync(path.join(ROOT, 'js/common.js'), 'utf8') + '\n//# sourceURL=common.js');
   await sleep(35);
@@ -268,6 +270,129 @@ async function selectAndOpen(env) {
   await until(() => env.$('serial-status').dataset.state === 'connected', 'port opened');
   assert.equal(env.port.calls.open, 1);
 }
+
+test('changing UI language preserves live port, drafts, unsaved inputs, history and device bytes', async (t) => {
+  const config = savedConfig({}, { quickSendList: [{ name: '연결됨', list: [{ name: '전송', content: '연결됨 <img> {name}', hex: false }] }] });
+  const env = await runtime(t, { storage: { [CONFIG_KEY]: config } });
+  await selectAndOpen(env);
+  await send(env, '연결됨');
+  env.value('serial-history', '0');
+  env.value('serial-send-content', '미완성 명령 {name}', 'input');
+  env.value('funsr-speed-value', '4.6', 'input');
+  env.check('funsr-device-confirm', true);
+  const quickInput = env.$('serial-quick-send-content').querySelector('input[type="text"]');
+  quickInput.value = 'unsaved draft 연결됨';
+  quickInput.focus(); quickInput.setSelectionRange(2, 5);
+  const beforeConfig = env.window.localStorage.getItem(CONFIG_KEY);
+  const beforeHistory = env.window.localStorage.getItem(HISTORY_KEY);
+  const beforeCode = env.$('serial-code-content').value;
+  const beforeCalls = { ...env.port.calls };
+  env.value('serial-language', 'en');
+  assert.equal(env.window.document.documentElement.lang, 'en');
+  assert.equal(env.$('serial-connection-label').textContent, 'Connected');
+  assert.equal(env.$('serial-history').value, '0');
+  assert.equal(env.$('serial-send-content').value, '미완성 명령 {name}');
+  assert.equal(env.$('funsr-speed-value').value, '4.6');
+  assert.equal(env.$('funsr-device-confirm').checked, true);
+  assert.equal(env.$('funsr-speed-apply').disabled, false);
+  assert.equal(env.$('serial-quick-send-content').querySelector('input[type="text"]'), quickInput);
+  assert.equal(quickInput.value, 'unsaved draft 연결됨');
+  assert.equal(quickInput.selectionStart, 2);
+  assert.equal(env.$('serial-quick-send-content').querySelector('.quick-send').textContent, '전송');
+  assert.equal(env.$('serial-quick-send').selectedOptions[0].textContent, '연결됨');
+  assert.equal(env.$('serial-code-content').value, beforeCode);
+  assert.equal(env.window.localStorage.getItem(CONFIG_KEY), beforeConfig);
+  assert.equal(env.window.localStorage.getItem(HISTORY_KEY), beforeHistory);
+  assert.deepEqual(env.port.calls, beforeCalls);
+  const data = '연결됨 <img src=x> {name}';
+  env.port.receive(encoder.encode(data));
+  await until(() => env.texts('rx').includes(data), 'untranslated device data');
+  env.value('serial-language', 'zh-CN');
+  assert.ok(env.texts('rx').includes(data));
+  assert.equal(env.$('serial-logs').querySelector('img'), null);
+  assert.match(env.rows('rx')[0].querySelector('.log-direction').getAttribute('aria-label'), /接收/);
+});
+
+test('language switching retains pending FUNSR ACK and sends no extra bytes', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  env.check('funsr-device-confirm', true);
+  env.value('funsr-speed-value', '4.6', 'input');
+  env.click('funsr-speed-apply');
+  await until(() => funsrState(env) === 'waiting', 'waiting for device ACK');
+  env.value('serial-language', 'en');
+  assert.match(env.$('funsr-speed-status').textContent, /DKP4.6/);
+  assert.doesNotMatch(env.$('funsr-speed-status').textContent, /[가-힣]/);
+  assert.equal(funsrState(env), 'waiting');
+  assert.equal(env.$('funsr-speed-apply').disabled, true);
+  env.port.receive(encoder.encode('new kp is 4.60!\r\nkp saved, please reboot!\r\n'));
+  await until(() => funsrState(env) === 'saved', 'ACK recognized after locale switch');
+  env.value('serial-language', 'zh-CN');
+  assert.equal(funsrState(env), 'saved');
+  assert.doesNotMatch(env.$('funsr-speed-status').textContent, /[가-힣]/);
+  assert.equal(env.port.writes.length, 1);
+  assert.equal(new TextDecoder().decode(env.port.writes[0]), 'DKP4.6\r\n');
+});
+
+test('language switching does not stop a running script or disarm an active repeat', async (t) => {
+  const env = await runtime(t);
+  await selectAndOpen(env);
+  env.click('serial-code-run');
+  await until(() => env.workers.length === 1, 'script started');
+  env.value('serial-language', 'en');
+  assert.equal(env.calls.workerTerminated, 0);
+  assert.equal(env.calls.worker, 1);
+  assert.match(env.$('serial-code-run').textContent, /Stop/);
+  env.click('serial-code-run');
+  env.value('serial-loop-send-time', 100);
+  env.value('serial-line-ending', 'crlf');
+  env.value('serial-send-content', 'AT', 'input');
+  env.check('serial-loop-send', true);
+  env.click('serial-send');
+  await until(() => env.port.writes.length >= 1, 'repeat started');
+  env.value('serial-language', 'zh-CN');
+  assert.equal(env.$('serial-loop-send').checked, true);
+  assert.match(env.$('serial-send').textContent, /停止/);
+  const count = env.port.writes.length;
+  await until(() => env.port.writes.length > count, 'same loop continues');
+  env.click('serial-send');
+  assert.ok(env.port.writes.every((bytes) => new TextDecoder().decode(bytes) === 'AT\r\n'));
+  assert.equal(env.port.calls.open, 1);
+  assert.equal(env.port.calls.close, 0);
+});
+
+for (const locale of ['en', 'zh-CN']) test('all initial UI and validation errors translate to ' + locale, async (t) => {
+  const env = await runtime(t, { languages: [locale] });
+  const doc = env.window.document;
+  const walker = doc.createTreeWalker(doc.body, env.window.NodeFilter.SHOW_TEXT);
+  const missed = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (!node.parentElement.closest('script, style, textarea, pre, code, noscript, [translate="no"]') && /[가-힣]/.test(node.nodeValue)) missed.push(node.nodeValue.trim());
+  }
+  assert.deepEqual(missed, []);
+  for (const element of doc.querySelectorAll('[title], [aria-label], [placeholder]')) {
+    for (const name of ['title', 'aria-label', 'placeholder']) assert.doesNotMatch(element.getAttribute(name) || '', /[가-힣]/);
+  }
+  env.check('serial-hex-send', true);
+  env.value('serial-send-content', 'A', 'input');
+  assert.equal(env.$('serial-send-content').getAttribute('aria-invalid'), 'true');
+  assert.doesNotMatch(env.$('serial-byte-count').title, /[가-힣]/);
+  assert.match(env.$('serial-byte-count').title, /HEX/);
+  env.value('funsr-speed-value', '1.25', 'input');
+  assert.match(env.$('funsr-speed-value').validationMessage, /0.1/);
+  assert.doesNotMatch(env.$('funsr-speed-value').validationMessage, /[가-힣]/);
+  const U = env.window.SerialUtils;
+  try { U.validateSerialOptions({ baudRate: -1 }); assert.fail('Invalid baud accepted'); }
+  catch (error) {
+    assert.ok(error.localizedMessage);
+    assert.doesNotMatch(env.window.SerialI18n.t(error.localizedMessage), /[가-힣]/);
+  }
+  env.click('serial-copy');
+  assert.doesNotMatch(env.$('modal-message').textContent, /[가-힣]/);
+  env.value('serial-language', 'ko');
+  assert.match(env.$('modal-message').textContent, /로그/);
+});
 
 async function send(env, content) {
   const previous = env.port.calls.write;

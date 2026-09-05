@@ -1,14 +1,16 @@
-/* Web Serial Debug KR — based on itldg/web-serial-debug (Apache-2.0; see LICENSE).
- * KR modifications: Korean UI, validated persistence, explicit connections,
+/* Web Serial Debug — based on itldg/web-serial-debug (Apache-2.0; see LICENSE).
+ * Fork modifications: multilingual UI, validated persistence, explicit connections,
  * bounded logs, safe rendering, history, stream cleanup and FUNSR PRO DKP. */
 ;(function () {
     'use strict'
     const U = window.SerialUtils
+    const I = window.SerialI18n
+    const m = I?.message || ((key) => key)
     const $ = (id) => document.getElementById(id)
     const on = (id, type, handler) => $(id)?.addEventListener(type, handler)
     const logs = $('serial-logs')
-    if (!logs || !U) {
-        if ($('serial-status')) $('serial-status').textContent = '필수 파일을 불러오지 못했습니다. 페이지를 새로고침해 주세요.'
+    if (!logs || !U || !I) {
+        if ($('serial-status')) $('serial-status').textContent = m('필수 파일을 불러오지 못했습니다. 페이지를 새로고침해 주세요.')
         return
     }
     const CONFIG_KEY = 'web-serial-debug-kr:config:v1'
@@ -44,7 +46,7 @@
     let port = null, opened = false, mayBeOpen = false, busy = false, selecting = false, closeFailed = false
     let reader = null, readTask = null, closeTask = null, activeWriter = null
     let writeTail = Promise.resolve(), pendingWrites = 0, epoch = 0, reconnectArmed = false, manuallyClosed = true
-    let statusText = supported ? '포트를 선택한 뒤 연결을 열어 주세요.' : unsupportedText()
+    let statusText = supported ? m('포트를 선택한 뒤 연결을 열어 주세요.') : unsupportedText()
     let entries = [], logBytes = 0, nextId = 1, rxCount = 0, txCount = 0
     let paused = false, fullRender = true, scheduled = false, renderedId = 0, visibleCount = 0
     let search = '', direction = 'all'
@@ -58,13 +60,15 @@
     let funsrConfirmed = false, funsrReported = null, funsrPending = null, funsrOutcome = null, funsrAckTimer = null
     const tipModal = window.bootstrap?.Modal && $('model-tip') ? new bootstrap.Modal($('model-tip')) : null
     const nameModal = window.bootstrap?.Modal && $('model-change-name') ? new bootstrap.Modal($('model-change-name')) : null
+    let lastNotice = null
 
     function unsupportedText() {
         return window.isSecureContext
-            ? '이 브라우저는 시리얼 연결을 지원하지 않습니다. 실제 연결에는 데스크톱 Chrome·Edge를 사용해 주세요.'
-            : '시리얼 연결에는 HTTPS 또는 localhost가 필요합니다. 안전한 주소로 다시 접속해 주세요.'
+            ? m('이 브라우저는 시리얼 연결을 지원하지 않습니다. 실제 연결에는 데스크톱 Chrome·Edge를 사용해 주세요.')
+            : m('시리얼 연결에는 HTTPS 또는 localhost가 필요합니다. 안전한 주소로 다시 접속해 주세요.')
     }
     function message(text, title = 'Web Serial Debug') {
+        lastNotice = { text, title }
         if (tipModal) {
             $('modal-title').textContent = title
             $('modal-message').textContent = String(text).slice(0, 4000)
@@ -73,25 +77,26 @@
     }
     function errorText(error) {
         const known = {
-            NotAllowedError: '브라우저 또는 운영체제에서 권한을 허용하지 않았습니다.',
-            SecurityError: '사이트의 시리얼 접근 권한을 확인해 주세요.',
-            NetworkError: '장치 연결 또는 통신 상태를 확인해 주세요.',
-            InvalidStateError: '포트가 다른 작업에 사용 중이거나 현재 상태에서 작업할 수 없습니다.',
-            NotSupportedError: '이 장치 또는 브라우저가 해당 설정을 지원하지 않습니다.',
-            AbortError: '작업이 취소되었습니다.',
+            NotAllowedError: m('브라우저 또는 운영체제에서 권한을 허용하지 않았습니다.'),
+            SecurityError: m('사이트의 시리얼 접근 권한을 확인해 주세요.'),
+            NetworkError: m('장치 연결 또는 통신 상태를 확인해 주세요.'),
+            InvalidStateError: m('포트가 다른 작업에 사용 중이거나 현재 상태에서 작업할 수 없습니다.'),
+            NotSupportedError: m('이 장치 또는 브라우저가 해당 설정을 지원하지 않습니다.'),
+            AbortError: m('작업이 취소되었습니다.'),
         }
-        return known[error?.name] || String(error?.message || error || '알 수 없는 오류').slice(0, 500)
+        if (error?.localizedMessage) return m(error.localizedMessage.key, error.localizedMessage.values)
+        return known[error?.name] || m(String(error?.message || error || '알 수 없는 오류').slice(0, 500))
     }
     function storageWarning() {
         if (storageWarned) return
         storageWarned = true
-        const text = '브라우저 저장 공간을 사용할 수 없어 변경 사항이 이번 탭에서만 유지됩니다. 저장 공간·개인정보 보호 설정을 확인해 주세요.'
+        const text = m('브라우저 저장 공간을 사용할 수 없어 변경 사항이 이번 탭에서만 유지됩니다. 저장 공간·개인정보 보호 설정을 확인해 주세요.')
         if (ready) systemLog(text); else startupWarnings.push(text)
     }
     function readStorage(key) { try { return localStorage.getItem(key) } catch (_) { storageWarning(); return null } }
     function writeStorage(key, value) { try { localStorage.setItem(key, value); return true } catch (_) { storageWarning(); return false } }
     function normalizedHistory(value) {
-        if (!Array.isArray(value)) throw new Error('전송 기록은 배열이어야 합니다.')
+        if (!Array.isArray(value)) throw I.error(m('전송 기록은 배열이어야 합니다.'))
         const clean = [], seen = new Set()
         for (const item of value.slice(0, 1000)) {
             if (!item || typeof item.content !== 'string' || !item.content.length || item.content.length > MAX_SEND || typeof item.hex !== 'boolean' || !['none', 'lf', 'cr', 'crlf'].includes(item.lineEnding)) continue
@@ -122,7 +127,7 @@
                 options = value.serialOptions; prefs = value.toolOptions; groups = value.quickSendList; code = value.code
             } catch (error) {
                 configBlocked = true
-                startupWarnings.push('저장된 설정을 읽지 못해 임시 기본값을 사용합니다. 기존 데이터는 지우지 않았습니다. 설정 가져오기 또는 초기화로 복구할 수 있습니다. ' + errorText(error))
+                startupWarnings.push(m('저장된 설정을 읽지 못해 임시 기본값을 사용합니다. 기존 데이터는 지우지 않았습니다. 설정 가져오기 또는 초기화로 복구할 수 있습니다. {error}', { error: errorText(error) }))
             }
         } else {
             const legacy = { serialOptions: readStorage('serialOptions'), toolOptions: readStorage('toolOptions'), quickSendList: readStorage('quickSendList'), code: readStorage('code') }
@@ -133,10 +138,10 @@
                     groups = legacy.quickSendList === null ? structuredClone(defaultQuick) : value.quickSendList
                     code = legacy.code === null ? defaultCode : value.code
                     saveConfig()
-                    startupWarnings.push('이전 버전의 설정을 검증해 가져왔습니다. 원래 저장 데이터는 보관됩니다. 자동 전송은 시작하지 않습니다.')
+                    startupWarnings.push(m('이전 버전의 설정을 검증해 가져왔습니다. 원래 저장 데이터는 보관됩니다. 자동 전송은 시작하지 않습니다.'))
                 } catch (error) {
                     configBlocked = true
-                    startupWarnings.push('이전 설정 형식이 올바르지 않아 임시 기본값을 사용합니다. 기존 데이터는 지우지 않았습니다. ' + errorText(error))
+                    startupWarnings.push(m('이전 설정 형식이 올바르지 않아 임시 기본값을 사용합니다. 기존 데이터는 지우지 않았습니다. {error}', { error: errorText(error) }))
                 }
             }
         }
@@ -146,7 +151,7 @@
         if (saved !== null) {
             try { history = normalizedHistory(JSON.parse(saved)) } catch (_) {
                 historyBlocked = true
-                startupWarnings.push('저장된 전송 기록을 읽지 못했습니다. 기존 데이터는 유지합니다. 기록 지우기를 누르면 새 기록을 저장할 수 있습니다.')
+                startupWarnings.push(m('저장된 전송 기록을 읽지 못했습니다. 기존 데이터는 유지합니다. 기록 지우기를 누르면 새 기록을 저장할 수 있습니다.'))
             }
         }
         const theme = readStorage(THEME_KEY)
@@ -182,7 +187,7 @@
         if ($('serial-theme')) {
             // The label names the action, so it is not an aria-pressed toggle.
             buttonLabel('serial-theme', '', theme === 'dark' ? 'bi-sun' : 'bi-moon')
-            $('serial-theme').title = theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'
+            $('serial-theme').title = theme === 'dark' ? m('라이트 모드로 전환') : m('다크 모드로 전환')
             $('serial-theme').setAttribute('aria-label', $('serial-theme').title)
         }
     }
@@ -195,24 +200,24 @@
     }
     function connected() { return opened }
     function portInfo() {
-        if (!port) return supported ? '아직 선택한 장치가 없습니다' : '이 브라우저에서 시리얼 연결을 지원하지 않습니다'
+        if (!port) return supported ? m('아직 선택한 장치가 없습니다') : m('이 브라우저에서 시리얼 연결을 지원하지 않습니다')
         try {
             const info = port.getInfo()
-            if (info.usbVendorId !== undefined) return 'USB ' + info.usbVendorId.toString(16).toUpperCase().padStart(4, '0') + ':' + (info.usbProductId || 0).toString(16).toUpperCase().padStart(4, '0') + ' · 선택한 장치'
+            if (info.usbVendorId !== undefined) return m('USB {id} · 선택한 장치', { id: info.usbVendorId.toString(16).toUpperCase().padStart(4, '0') + ':' + (info.usbProductId || 0).toString(16).toUpperCase().padStart(4, '0') })
         } catch (_) { /* Disconnected devices may not expose info. */ }
-        return '선택한 시리얼 장치'
+        return m('선택한 시리얼 장치')
     }
     function updateConnection() {
         const pending = busy || selecting
         const state = pending ? 'busy' : opened ? 'connected' : !supported ? 'unsupported' : port ? 'selected' : 'disconnected'
         if ($('serial-status')) { $('serial-status').textContent = statusText; $('serial-status').dataset.state = state }
-        if ($('serial-connection-label')) $('serial-connection-label').textContent = pending ? '연결 작업 중' : opened ? '연결됨' : closeFailed ? '연결 상태 확인 필요' : port ? '포트 선택됨' : '연결 안 됨'
+        if ($('serial-connection-label')) $('serial-connection-label').textContent = pending ? m('연결 작업 중') : opened ? m('연결됨') : closeFailed ? m('연결 상태 확인 필요') : port ? m('포트 선택됨') : m('연결 안 됨')
         if ($('serial-port-info')) $('serial-port-info').textContent = portInfo()
-        if ($('serial-live-state')) { $('serial-live-state').textContent = paused ? '화면 일시정지' : opened ? '실시간 기록 중' : '연결 대기'; $('serial-live-state').dataset.state = state }
+        if ($('serial-live-state')) { $('serial-live-state').textContent = paused ? m('화면 일시정지') : opened ? m('실시간 기록 중') : m('연결 대기'); $('serial-live-state').dataset.state = state }
         if ($('serial-select-port')) $('serial-select-port').disabled = !supported || pending || opened || mayBeOpen
         if ($('serial-open-or-close')) {
             $('serial-open-or-close').disabled = !supported || pending || !port
-            buttonLabel('serial-open-or-close', busy ? '연결 처리 중…' : opened ? '연결 해제' : closeFailed ? '닫기 재시도' : '연결하기', opened ? 'bi-x-lg' : 'bi-plug')
+            buttonLabel('serial-open-or-close', busy ? m('연결 처리 중…') : opened ? m('연결 해제') : closeFailed ? m('닫기 재시도') : m('연결하기'), opened ? 'bi-x-lg' : 'bi-plug')
         }
         for (const id of [...Object.values(hardwareFields), 'serial-preset']) if ($(id)) $(id).disabled = pending || opened || mayBeOpen
         if ($('serial-auto-reconnect')) $('serial-auto-reconnect').disabled = !supported
@@ -223,7 +228,7 @@
     function updateCounters() {
         if ($('serial-rx-count')) $('serial-rx-count').textContent = U.formatBytes(rxCount)
         if ($('serial-tx-count')) $('serial-tx-count').textContent = U.formatBytes(txCount)
-        if ($('serial-log-count')) $('serial-log-count').textContent = entries.length.toLocaleString('ko-KR')
+        if ($('serial-log-count')) $('serial-log-count').textContent = entries.length.toLocaleString(I.language)
         const seconds = Math.max(0, Math.floor((sessionStart === null ? sessionElapsed : Date.now() - sessionStart) / 1000))
         const hours = Math.floor(seconds / 3600)
         const text = (hours ? String(hours).padStart(2, '0') + ':' : '') + String(Math.floor(seconds % 3600 / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0')
@@ -305,8 +310,8 @@
         const row = document.createElement('div'), time = document.createElement('span'), badge = document.createElement('span'), body = document.createElement('div')
         row.className = 'log-entry'; row.dataset.direction = entry.direction; row.dataset.logId = entry.id
         time.className = 'log-time'; time.textContent = U.formatTimestamp(entry.date); time.hidden = !prefs.showTime
-        badge.className = 'log-direction'; badge.textContent = entry.direction === 'system' ? '안내' : entry.direction.toUpperCase()
-        badge.setAttribute('aria-label', entry.direction === 'rx' ? '수신' : entry.direction === 'tx' ? '송신' : '시스템 안내')
+        badge.className = 'log-direction'; badge.textContent = entry.direction === 'system' ? m('안내') : entry.direction.toUpperCase()
+        badge.setAttribute('aria-label', entry.direction === 'rx' ? m('수신') : entry.direction === 'tx' ? m('송신') : m('시스템 안내'))
         body.className = 'log-body'
         if (entry.direction === 'system') body.textContent = visibleText(entry.text)
         else {
@@ -341,20 +346,23 @@
         if (entries.length) renderedId = entries[entries.length - 1].id
         logs.appendChild(fragment)
         logs.classList.toggle('no-wrap', !prefs.wrap); logs.classList.toggle('hide-time', !prefs.showTime); logs.classList.toggle('no-time', !prefs.showTime)
+        updateEmptyState()
+        if (prefs.autoScroll) logs.scrollTop = logs.scrollHeight
+    }
+    function updateEmptyState() {
         const empty = $('serial-empty-state')
         if (empty) {
             empty.hidden = visibleCount > 0
             const title = empty.querySelector('[data-empty-title], h2, h3, strong'), description = empty.querySelector('[data-empty-description], p')
-            if (title) title.textContent = entries.length ? '일치하는 로그가 없습니다' : '아직 수신한 데이터가 없습니다'
-            if (description) description.textContent = entries.length ? '검색어나 송수신 필터를 바꿔 보세요.' : '포트를 선택하고 장치에 맞는 설정으로 연결해 주세요.'
+            if (title) title.textContent = entries.length ? m('일치하는 로그가 없습니다') : m('아직 수신한 데이터가 없습니다')
+            if (description) description.textContent = entries.length ? m('검색어나 송수신 필터를 바꿔 보세요.') : m('포트를 선택하고 장치에 맞는 설정으로 연결해 주세요.')
         }
-        if (prefs.autoScroll) logs.scrollTop = logs.scrollHeight
     }
     function updateLogButtons() {
-        if ($('serial-auto-scroll')) { buttonLabel('serial-auto-scroll', prefs.autoScroll ? '자동 스크롤 켬' : '자동 스크롤 끔', 'bi-arrow-down'); $('serial-auto-scroll').setAttribute('aria-pressed', String(prefs.autoScroll)) }
+        if ($('serial-auto-scroll')) { buttonLabel('serial-auto-scroll', prefs.autoScroll ? m('자동 스크롤 켬') : m('자동 스크롤 끔'), 'bi-arrow-down'); $('serial-auto-scroll').setAttribute('aria-pressed', String(prefs.autoScroll)) }
         if ($('serial-pause')) {
-            buttonLabel('serial-pause', paused ? '화면 재개' : '화면 일시정지', paused ? 'bi-play' : 'bi-pause')
-            $('serial-pause').title = paused ? '보관된 로그를 화면에 다시 표시합니다' : '수신은 계속하고 화면 표시만 잠시 멈춥니다'
+            buttonLabel('serial-pause', paused ? m('화면 재개') : m('화면 표시 일시정지'), paused ? 'bi-play' : 'bi-pause')
+            $('serial-pause').title = paused ? m('보관된 로그를 화면에 다시 표시합니다') : m('수신은 계속하고 화면 표시만 잠시 멈춥니다')
         }
         logs.classList.toggle('is-paused', paused)
     }
@@ -368,7 +376,7 @@
         addBytes(joined, 'rx')
         if (worker) {
             try { worker.postMessage({ type: 'uart_receive', data: Array.from(joined) }) }
-            catch (error) { stopWorker(); systemLog('스크립트에 수신 데이터를 전달하지 못했습니다. ' + errorText(error)) }
+            catch (error) { stopWorker(); systemLog(m('스크립트에 수신 데이터를 전달하지 못했습니다. {error}', { error: errorText(error) })) }
         }
     }
     function receiveData(data) {
@@ -397,13 +405,13 @@
         const apply = $('funsr-speed-apply'), statusNode = $('funsr-speed-status')
         const hasDraft = funsrDraft !== null && !funsrDraftError
         const blocked = loopActive || Boolean(worker) || sending || pendingWrites > 0
-        if ($('funsr-speed-command')) $('funsr-speed-command').textContent = hasDraft ? U.formatFunsrKpCommand(funsrDraft) : '설정값을 확인해 주세요'
+        if ($('funsr-speed-command')) $('funsr-speed-command').textContent = hasDraft ? U.formatFunsrKpCommand(funsrDraft) : m('설정값을 확인해 주세요')
         if ($('funsr-speed-value')) {
             $('funsr-speed-value').setAttribute('aria-invalid', String(!hasDraft))
             $('funsr-speed-value').setCustomValidity(funsrDraftError)
         }
         if ($('funsr-device-confirm')) $('funsr-device-confirm').disabled = !opened || busy || selecting || Boolean(funsrPending)
-        if ($('funsr-speed-reported')) $('funsr-speed-reported').textContent = funsrReported === null ? '아직 확인하지 않음' : funsrReported.toFixed(2) + ' (부팅 보고)'
+        if ($('funsr-speed-reported')) $('funsr-speed-reported').textContent = funsrReported === null ? m('아직 확인하지 않음') : m('{value} (부팅 보고)', { value: funsrReported.toFixed(2) })
         if (apply) {
             apply.disabled = !supported || !opened || !port?.writable || busy || selecting || !hasDraft || !funsrConfirmed || blocked || Boolean(funsrPending)
             apply.setAttribute('aria-busy', String(Boolean(funsrPending)))
@@ -415,21 +423,21 @@
         let state, text
         if (funsrPending) {
             state = funsrPending.written ? 'waiting' : 'sending'
-            text = funsrPending.command + (funsrPending.written ? ' 전송됨 · 저장 응답을 기다립니다. (최대 8초)' : ' 전송 중 · 기기 저장 여부는 아직 확인하지 않았습니다.')
+            text = m(funsrPending.written ? '{command} 전송됨 · 저장 응답을 기다립니다. (최대 8초)' : '{command} 전송 중 · 기기 저장 여부는 아직 확인하지 않았습니다.', { command: funsrPending.command })
         } else if (!hasDraft) {
             state = 'invalid'; text = funsrDraftError
         } else if (!opened || busy || selecting) {
-            state = 'disconnected'; text = 'FUNSR PRO의 포트를 연결한 뒤 설정을 전송해 주세요.'
+            state = 'disconnected'; text = m('FUNSR PRO의 포트를 연결한 뒤 설정을 전송해 주세요.')
         } else if (loopActive || worker) {
-            state = 'blocked'; text = '반복 전송과 사용자 스크립트를 먼저 중지해 주세요.'
+            state = 'blocked'; text = m('반복 전송과 사용자 스크립트를 먼저 중지해 주세요.')
         } else if (sending || pendingWrites > 0) {
-            state = 'blocked'; text = '진행 중인 다른 전송이 끝난 뒤 설정을 전송해 주세요.'
+            state = 'blocked'; text = m('진행 중인 다른 전송이 끝난 뒤 설정을 전송해 주세요.')
         } else if (!funsrConfirmed) {
-            state = 'unconfirmed'; text = '선택한 장치가 FUNSR PRO인지 직접 확인하고 체크해 주세요.'
+            state = 'unconfirmed'; text = m('선택한 장치가 FUNSR PRO인지 직접 확인하고 체크해 주세요.')
         } else if (funsrOutcome?.epoch === epoch) {
             state = funsrOutcome.state; text = funsrOutcome.text
         } else {
-            state = 'ready'; text = '보낼 값을 확인한 뒤 설정 전송을 누르세요. 한 번만 전송합니다.'
+            state = 'ready'; text = m('보낼 값을 확인한 뒤 설정 전송을 누르세요. 한 번만 전송합니다.')
         }
         if (statusNode) { statusNode.dataset.state = state; statusNode.textContent = text }
     }
@@ -449,7 +457,7 @@
     }
 
     function resetFunsrSession(reason = '') {
-        if (funsrPending && reason) systemLog(funsrPending.command + ' 응답 확인을 중단했습니다. ' + reason + ' 기기 저장 여부는 확인하지 못했습니다.')
+        if (funsrPending && reason) systemLog(m('{command} 응답 확인을 중단했습니다. {reason} 기기 저장 여부는 확인하지 못했습니다.', { command: funsrPending.command, reason }))
         clearTimeout(funsrAckTimer); funsrAckTimer = null
         funsrPending = null; funsrOutcome = null; funsrReported = null; funsrConfirmed = false
         funsrParser.reset()
@@ -468,7 +476,7 @@
 
     function confirmFunsrSaved(request) {
         if (request.written && request.matchingValue && request.saved) {
-            finishFunsr(request, 'saved', request.command + ' 저장 응답을 확인했습니다. 기기를 직접 재시작하세요. 부팅 보고값은 별도로 확인합니다.')
+            finishFunsr(request, 'saved', m('{command} 저장 응답을 확인했습니다. 기기를 직접 재시작하세요. 부팅 보고값은 별도로 확인합니다.', { command: request.command }))
         }
     }
 
@@ -518,11 +526,11 @@
             confirmFunsrSaved(request)
             if (funsrPending !== request) return
             funsrAckTimer = setTimeout(() => {
-                finishFunsr(request, 'unconfirmed-save', request.command + ' 전송됨, 저장 응답 미확인. 자동 재전송하지 않습니다. 장치와 수신 로그를 확인해 주세요.')
+                finishFunsr(request, 'unconfirmed-save', m('{command} 전송됨, 저장 응답 미확인. 자동 재전송하지 않습니다. 장치와 수신 로그를 확인해 주세요.', { command: request.command }))
             }, FUNSR_ACK_TIMEOUT)
             updateFunsr()
         } catch (error) {
-            finishFunsr(request, 'error', request.command + ' 전송을 완료하지 못했습니다. 기기 저장 여부는 확인하지 못했습니다. ' + errorText(error))
+            finishFunsr(request, 'error', m('{command} 전송을 완료하지 못했습니다. 기기 저장 여부는 확인하지 못했습니다. {error}', { command: request.command, error: errorText(error) }))
         }
     }
 
@@ -544,46 +552,46 @@
     }
     async function openSerial(automatic = false) {
         if (busy || selecting || opened || !supported) return
-        if (!port) { message('먼저 연결할 포트를 선택해 주세요.'); return }
+        if (!port) { message(m('먼저 연결할 포트를 선택해 주세요.')); return }
         if (automatic && (!reconnectArmed || !prefs.autoReconnect)) return
-        try { options = readOptions() } catch (error) { message(errorText(error), '연결 설정 확인'); return }
+        try { options = readOptions() } catch (error) { message(errorText(error), m('연결 설정 확인')); return }
         const selectedPort = port
         busy = true; closeFailed = false; resetFunsrSession()
-        status(automatic ? '선택했던 장치에 다시 연결하는 중입니다…' : '포트 연결을 여는 중입니다…')
+        status(automatic ? m('선택했던 장치에 다시 연결하는 중입니다…') : m('포트 연결을 여는 중입니다…'))
         try {
             await selectedPort.open(options)
             mayBeOpen = true; opened = true; reconnectArmed = false; manuallyClosed = false; epoch++
             const token = epoch
             resetDecoder(false); saveConfig(); startSession()
-            status('연결되었습니다. 전송 버튼을 누르기 전에는 데이터를 보내지 않습니다.')
-            systemLog((automatic ? '선택했던 장치에 다시 연결했습니다. ' : '시리얼 연결을 열었습니다. ') + options.baudRate.toLocaleString('ko-KR') + ' baud · ' + options.dataBits + (options.parity === 'even' ? 'E' : options.parity === 'odd' ? 'O' : 'N') + options.stopBits)
+            status(m('연결되었습니다. 전송 버튼을 누르기 전에는 데이터를 보내지 않습니다.'))
+            systemLog(m(automatic ? '선택했던 장치에 다시 연결했습니다. {settings}' : '시리얼 연결을 열었습니다. {settings}', { settings: options.baudRate.toLocaleString(I.language) + ' baud · ' + options.dataBits + (options.parity === 'even' ? 'E' : options.parity === 'odd' ? 'O' : 'N') + options.stopBits }))
             readTask = readSerial(selectedPort, token)
             readTask.then(() => {
                 if (opened && epoch === token) {
                     reconnectArmed = prefs.autoReconnect
-                    systemLog('수신 스트림이 종료되어 연결을 정리합니다.')
+                    systemLog(m('수신 스트림이 종료되어 연결을 정리합니다.'))
                     void closeSerial(false)
                 }
             }, (error) => {
                 if (opened && epoch === token) {
                     reconnectArmed = prefs.autoReconnect
-                    systemLog('수신 중 오류가 발생하여 연결을 정리합니다. ' + errorText(error))
+                    systemLog(m('수신 중 오류가 발생하여 연결을 정리합니다. {error}', { error: errorText(error) }))
                     void closeSerial(false)
                 }
             })
         } catch (error) {
             opened = false
-            systemLog('시리얼 연결을 열지 못했습니다. ' + errorText(error))
-            status('연결 실패 · 다른 프로그램의 포트 점유와 장치 설정을 확인해 주세요.')
-            if (!automatic) message('포트 연결을 열지 못했습니다. ' + errorText(error), '연결 실패')
+            systemLog(m('시리얼 연결을 열지 못했습니다. {error}', { error: errorText(error) }))
+            status(m('연결 실패 · 다른 프로그램의 포트 점유와 장치 설정을 확인해 주세요.'))
+            if (!automatic) message(m('포트 연결을 열지 못했습니다. {error}', { error: errorText(error) }), m('연결 실패'))
         } finally { busy = false; updateConnection() }
     }
     function closeSerial(manual = true) {
         if (manual) { reconnectArmed = false; manuallyClosed = true }
         if (closeTask) return closeTask
         const selectedPort = port, wasOpen = opened || mayBeOpen
-        opened = false; epoch++; resetFunsrSession('포트 연결이 종료되었습니다.'); stopLoop(); stopWorker(); busy = true
-        status('연결과 데이터 스트림을 정리하는 중입니다…')
+        opened = false; epoch++; resetFunsrSession(m('포트 연결이 종료되었습니다.')); stopLoop(); stopWorker(); busy = true
+        status(m('연결과 데이터 스트림을 정리하는 중입니다…'))
         closeTask = (async () => {
             try {
                 const cancellations = []
@@ -595,12 +603,12 @@
                 resetDecoder()
                 if (selectedPort && mayBeOpen) await selectedPort.close()
                 mayBeOpen = false; closeFailed = false
-                if (wasOpen) systemLog(manual ? '시리얼 연결을 닫았습니다.' : '장치 연결이 끊어졌습니다.' + (reconnectArmed ? ' 선택했던 장치가 다시 연결되면 재연결을 시도합니다.' : ' 다시 연결하려면 연결하기를 눌러 주세요.'))
-                status(manual ? '연결을 닫았습니다. 포트를 다시 열 수 있습니다.' : reconnectArmed ? '선택한 장치의 재연결을 기다리는 중입니다.' : '장치가 분리되었거나 통신이 종료되었습니다.')
+                if (wasOpen) systemLog(manual ? m('시리얼 연결을 닫았습니다.') : reconnectArmed ? m('장치 연결이 끊어졌습니다. 선택했던 장치가 다시 연결되면 재연결을 시도합니다.') : m('장치 연결이 끊어졌습니다. 다시 연결하려면 연결하기를 눌러 주세요.'))
+                status(manual ? m('연결을 닫았습니다. 포트를 다시 열 수 있습니다.') : reconnectArmed ? m('선택한 장치의 재연결을 기다리는 중입니다.') : m('장치가 분리되었거나 통신이 종료되었습니다.'))
             } catch (error) {
                 closeFailed = true
-                systemLog('포트를 완전히 닫지 못했습니다. ' + errorText(error))
-                status('포트 종료를 확인하지 못했습니다. 닫기 재시도를 누르거나 장치 상태를 확인해 주세요.')
+                systemLog(m('포트를 완전히 닫지 못했습니다. {error}', { error: errorText(error) }))
+                status(m('포트 종료를 확인하지 못했습니다. 닫기 재시도를 누르거나 장치 상태를 확인해 주세요.'))
             } finally {
                 reader = null; readTask = null; activeWriter = null; busy = false; closeTask = null
                 finishSession(); updateConnection()
@@ -616,11 +624,11 @@
             // remembered device or replace one from a global connect event.
             port = await navigator.serial.requestPort()
             closeFailed = false
-            status('포트를 선택했습니다. 설정을 확인한 뒤 연결하기를 눌러 주세요.')
+            status(m('포트를 선택했습니다. 설정을 확인한 뒤 연결하기를 눌러 주세요.'))
         } catch (error) {
             if (!['NotFoundError', 'AbortError'].includes(error?.name)) {
-                systemLog('포트를 선택하지 못했습니다. ' + errorText(error))
-                message('포트 선택 권한을 확인해 주세요. ' + errorText(error))
+                systemLog(m('포트를 선택하지 못했습니다. {error}', { error: errorText(error) }))
+                message(m('포트 선택 권한을 확인해 주세요. {error}', { error: errorText(error) }))
             }
         } finally { selecting = false; updateConnection() }
     }
@@ -629,7 +637,7 @@
         navigator.serial.addEventListener('disconnect', (event) => {
             if (eventPort(event) !== port) return
             if (opened || mayBeOpen) { reconnectArmed = !manuallyClosed && Boolean(prefs.autoReconnect); void closeSerial(false) }
-            else status('선택한 장치가 분리되었습니다.')
+            else status(m('선택한 장치가 분리되었습니다.'))
         })
         navigator.serial.addEventListener('connect', async (event) => {
             // Same-object equality is intentional. A VID/PID match may refer
@@ -640,11 +648,11 @@
         })
     }
     function sendRecord(content, hex, lineEnding) {
-        if (typeof content !== 'string' || !content.length) throw new Error('전송할 내용을 입력해 주세요.')
-        if (content.length > MAX_SEND) throw new Error('한 번에 전송할 내용은 64 KiB 이하여야 합니다.')
+        if (typeof content !== 'string' || !content.length) throw I.error(m('전송할 내용을 입력해 주세요.'))
+        if (content.length > MAX_SEND) throw I.error(m('한 번에 전송할 내용은 64 KiB 이하여야 합니다.'))
         const bytes = hex ? U.parseHex(content) : U.appendLineEnding(encoder.encode(content), lineEnding)
-        if (!bytes.length) throw new Error('전송할 내용을 입력해 주세요.')
-        if (bytes.length > MAX_SEND) throw new Error('줄 끝 문자를 포함한 전송 데이터가 64 KiB를 넘습니다.')
+        if (!bytes.length) throw I.error(m('전송할 내용을 입력해 주세요.'))
+        if (bytes.length > MAX_SEND) throw I.error(m('줄 끝 문자를 포함한 전송 데이터가 64 KiB를 넘습니다.'))
         return { content, hex: Boolean(hex), lineEnding, bytes }
     }
     function composerRecord() { return sendRecord($('serial-send-content').value, $('serial-hex-send').checked, $('serial-line-ending').value) }
@@ -652,13 +660,13 @@
         const input = $('serial-send-content'), label = $('serial-byte-count'), note = document.querySelector('.encoding-note')
         if (!input || !label) return
         const hex = Boolean($('serial-hex-send')?.checked)
-        if (note) note.textContent = hex ? 'HEX 전송: 원시 바이트' : '텍스트 전송: UTF-8'
+        if (note) note.textContent = hex ? m('HEX 전송: 원시 바이트') : m('텍스트 전송: UTF-8')
         let invalid = false
         try {
             const record = input.value.length ? composerRecord() : null
             label.textContent = U.formatBytes(record?.bytes.length || 0)
-            label.title = hex ? 'HEX 원시 바이트 · 줄 끝 문자를 추가하지 않습니다' : 'UTF-8 텍스트 · 선택한 줄 끝 문자 포함'
-        } catch (error) { invalid = true; label.textContent = '입력 확인 필요'; label.title = errorText(error) }
+            label.title = hex ? m('HEX 원시 바이트 · 줄 끝 문자를 추가하지 않습니다') : m('UTF-8 텍스트 · 선택한 줄 끝 문자 포함')
+        } catch (error) { invalid = true; label.textContent = m('입력 확인 필요'); label.title = errorText(error) }
         input.classList.toggle('is-invalid', invalid); input.setAttribute('aria-invalid', String(invalid)); updateSendButton()
     }
     function updateSendButton() {
@@ -666,8 +674,8 @@
         if (!button) return
         const invalid = $('serial-send-content')?.getAttribute('aria-invalid') === 'true'
         button.disabled = !connected() || busy || selecting || sending || Boolean(funsrPending) || (invalid && !loopActive)
-        buttonLabel('serial-send', loopActive ? '반복 전송 중지' : sending ? '전송 중…' : '전송', loopActive ? 'bi-stop' : 'bi-arrow-up-right', loopActive || sending ? '' : MODIFIER_KEY + ' ↵')
-        button.title = loopActive ? '진행 중인 반복 전송을 멈춥니다' : MODIFIER_KEY + ' + Enter로 전송'
+        buttonLabel('serial-send', loopActive ? m('반복 전송 중지') : sending ? m('전송 중…') : m('전송'), loopActive ? 'bi-stop' : 'bi-arrow-up-right', loopActive || sending ? '' : MODIFIER_KEY + ' ↵')
+        button.title = loopActive ? m('진행 중인 반복 전송을 멈춥니다') : m('{modifier} + Enter로 전송', { modifier: MODIFIER_KEY })
         updateFunsr()
     }
     function remember(record) {
@@ -676,17 +684,17 @@
         historyCursor = -1; historyDraft = null; renderHistory()
     }
     function transmit(data, funsrRequest = null) {
-        if (!(data instanceof Uint8Array) || !data.length || data.length > MAX_SEND) return Promise.reject(new Error('전송 데이터는 1~65,536 바이트여야 합니다.'))
-        if (!connected() || busy) return Promise.reject(new Error('포트를 연결한 뒤 전송해 주세요.'))
-        if (funsrPending && funsrRequest !== funsrPending) return Promise.reject(new Error('FUNSR PRO 저장 응답을 확인하는 동안 다른 전송은 잠시 기다려 주세요.'))
-        if (pendingWrites >= 64) return Promise.reject(new Error('대기 중인 전송이 너무 많습니다. 전송 주기를 늘려 주세요.'))
+        if (!(data instanceof Uint8Array) || !data.length || data.length > MAX_SEND) return Promise.reject(I.error(m('전송 데이터는 1~65,536 바이트여야 합니다.')))
+        if (!connected() || busy) return Promise.reject(I.error(m('포트를 연결한 뒤 전송해 주세요.')))
+        if (funsrPending && funsrRequest !== funsrPending) return Promise.reject(I.error(m('FUNSR PRO 저장 응답을 확인하는 동안 다른 전송은 잠시 기다려 주세요.')))
+        if (pendingWrites >= 64) return Promise.reject(I.error(m('대기 중인 전송이 너무 많습니다. 전송 주기를 늘려 주세요.')))
         const payload = data.slice(), token = epoch, selectedPort = port
         pendingWrites++; updateFunsr()
         const task = writeTail.then(async () => {
-            if (epoch !== token || !connected() || busy) throw new Error('연결 상태가 바뀌어 대기 중인 전송을 취소했습니다.')
-            if (funsrPending && funsrRequest !== funsrPending) throw new Error('FUNSR PRO 설정 전송과 다른 전송을 동시에 실행할 수 없습니다.')
-            if (funsrRequest && (funsrPending !== funsrRequest || funsrRequest.epoch !== epoch || funsrRequest.port !== port || !funsrConfirmed || !$('funsr-device-confirm')?.checked || loopActive || worker)) throw new Error('FUNSR PRO 연결 확인 또는 실행 상태가 바뀌어 전송을 취소했습니다.')
-            if (!selectedPort?.writable) throw new Error('포트 전송 스트림을 사용할 수 없습니다. 다시 연결해 주세요.')
+            if (epoch !== token || !connected() || busy) throw I.error(m('연결 상태가 바뀌어 대기 중인 전송을 취소했습니다.'))
+            if (funsrPending && funsrRequest !== funsrPending) throw I.error(m('FUNSR PRO 설정 전송과 다른 전송을 동시에 실행할 수 없습니다.'))
+            if (funsrRequest && (funsrPending !== funsrRequest || funsrRequest.epoch !== epoch || funsrRequest.port !== port || !funsrConfirmed || !$('funsr-device-confirm')?.checked || loopActive || worker)) throw I.error(m('FUNSR PRO 연결 확인 또는 실행 상태가 바뀌어 전송을 취소했습니다.'))
+            if (!selectedPort?.writable) throw I.error(m('포트 전송 스트림을 사용할 수 없습니다. 다시 연결해 주세요.'))
             const writer = selectedPort.writable.getWriter()
             activeWriter = writer
             try {
@@ -700,7 +708,7 @@
     }
     function confirmCommand(record) {
         const risky = !record.hex && /(?:^|[\r\n])\s*(?:AT\+(?:RESTORE|RST|GSLP|UART_DEF|SYSFLASH|SYSMFG|SAVETRANSLINK)(?:=|\s*$)|AT\+(?:CIUPDATE|CIPUPDATE))/i.test(record.content)
-        return !risky || window.confirm('이 명령은 장치를 재시작하거나 설정·플래시 데이터를 변경할 수 있습니다. 장치 문서를 확인한 명령만 전송해 주세요. 계속할까요?')
+        return !risky || window.confirm(m('이 명령은 장치를 재시작하거나 설정·플래시 데이터를 변경할 수 있습니다. 장치 문서를 확인한 명령만 전송해 주세요. 계속할까요?'))
     }
     async function sendComposer() {
         if (loopActive) { stopLoop(); return }
@@ -711,7 +719,7 @@
             sending = true; updateSendButton()
             await transmit(record.bytes); remember(record)
             if (prefs.loopSend && connected()) { loopActive = true; loopRecord = record; loopEpoch++; scheduleLoop(loopEpoch) }
-        } catch (error) { stopLoop(); systemLog('전송하지 못했습니다. ' + errorText(error)) }
+        } catch (error) { stopLoop(); systemLog(m('전송하지 못했습니다. {error}', { error: errorText(error) })) }
         finally { sending = false; updateSendButton() }
     }
     function scheduleLoop(token) {
@@ -719,7 +727,7 @@
         loopTimer = setTimeout(async () => {
             if (!loopActive || token !== loopEpoch || !loopRecord || !connected()) return
             try { await transmit(loopRecord.bytes); if (loopActive && token === loopEpoch && connected()) scheduleLoop(token) }
-            catch (error) { stopLoop(); systemLog('오류로 반복 전송을 중지했습니다. ' + errorText(error)) }
+            catch (error) { stopLoop(); systemLog(m('오류로 반복 전송을 중지했습니다. {error}', { error: errorText(error) })) }
         }, Math.max(100, prefs.loopSendTime))
         updateSendButton()
     }
@@ -729,7 +737,7 @@
         updateSendButton()
     }
     function clearLogs(ask = true) {
-        if (ask && entries.length && !window.confirm('보관 중인 로그와 송수신 바이트 수를 지울까요? 필요하다면 먼저 로그를 저장해 주세요.')) return
+        if (ask && entries.length && !window.confirm(m('보관 중인 로그와 송수신 바이트 수를 지울까요? 필요하다면 먼저 로그를 저장해 주세요.'))) return
         flushReceive(); entries = []; logBytes = 0; rxCount = 0; txCount = 0; fullRender = true
         // Explicit clearing also clears the frozen display while paused.
         logs.replaceChildren(); visibleCount = 0; renderedId = 0
@@ -741,11 +749,11 @@
         if (!select) return
         select.replaceChildren()
         const placeholder = document.createElement('option')
-        placeholder.value = ''; placeholder.textContent = history.length ? '최근 전송 기록 (' + history.length + '/30)' : '최근 전송 기록 없음'; select.appendChild(placeholder)
-        const endings = { none: '줄 끝 없음', lf: 'LF', cr: 'CR', crlf: 'CRLF' }
+        placeholder.value = ''; placeholder.textContent = history.length ? m('최근 전송 기록 ({count}/30)', { count: history.length }) : m('최근 전송 기록 없음'); select.appendChild(placeholder)
+        const endings = { none: m('줄 끝 없음'), lf: 'LF', cr: 'CR', crlf: 'CRLF' }
         history.forEach((record, index) => {
             const option = document.createElement('option'); option.value = String(index)
-            option.textContent = (record.hex ? 'HEX' : '텍스트') + ' · ' + record.content.replace(/\s+/g, ' ').slice(0, 64) + ' · ' + (record.hex ? '원시 바이트' : endings[record.lineEnding])
+            option.textContent = (record.hex ? 'HEX' : m('텍스트')) + ' · ' + record.content.replace(/\s+/g, ' ').slice(0, 64) + ' · ' + (record.hex ? m('원시 바이트') : endings[record.lineEnding])
             select.appendChild(option)
         })
         select.value = ''
@@ -775,29 +783,58 @@
         select.value = String(prefs.quickSendIndex); container.replaceChildren()
         group().list.forEach((item, index) => {
             const row = document.createElement('div'); row.className = 'quick-item'; row.dataset.index = String(index)
-            const remove = quickButton('×', 'quick-remove', item.name + ' 명령 삭제')
+            const remove = quickButton('×', 'quick-remove', m('{name} 명령 삭제', { name: item.name }))
             const input = document.createElement('input'); input.type = 'text'; input.className = 'form-control form-control-sm'; input.value = item.content; input.maxLength = MAX_SEND
-            input.placeholder = '명령 내용 · 더블클릭으로 이름 변경'; input.title = '내용을 편집합니다. 이름은 더블클릭으로 바꿀 수 있습니다.'; input.setAttribute('aria-label', item.name + ' 명령 내용')
-            const load = quickButton('담기', 'quick-load', item.name + ' 명령을 입력창에 담기 (전송하지 않음)')
-            const send = quickButton(item.name, 'quick-send', item.name + ' 명령 전송'); send.disabled = !connected() || busy || Boolean(funsrPending)
+            input.placeholder = m('명령 내용 · 더블클릭으로 이름 변경'); input.title = m('내용을 편집합니다. 이름은 더블클릭으로 바꿀 수 있습니다.'); input.setAttribute('aria-label', m('{name} 명령 내용', { name: item.name }))
+            const load = quickButton(m('담기'), 'quick-load', m('{name} 명령을 입력창에 담기 (전송하지 않음)', { name: item.name }))
+            const send = quickButton(item.name, 'quick-send', m('{name} 명령 전송', { name: item.name })); send.disabled = !connected() || busy || Boolean(funsrPending)
             const label = document.createElement('label'); label.className = 'quick-label'
-            const hex = document.createElement('input'); hex.type = 'checkbox'; hex.className = 'form-check-input'; hex.checked = item.hex; hex.setAttribute('aria-label', item.name + ' 명령을 HEX로 전송')
+            const hex = document.createElement('input'); hex.type = 'checkbox'; hex.className = 'form-check-input'; hex.checked = item.hex; hex.setAttribute('aria-label', m('{name} 명령을 HEX로 전송', { name: item.name }))
             const labelText = document.createElement('span'); labelText.textContent = 'HEX'; label.append(hex, labelText)
             // DOM order follows the rendered grid so tab and reading order match.
             row.append(send, label, load, remove, input); container.appendChild(row)
         })
         if ($('serial-quick-send-remove-group')) $('serial-quick-send-remove-group').disabled = groups.length <= 1
+        updateQuickLabels()
+    }
+    function updateQuickLabels() {
+        const pristine = (value) => JSON.stringify(value) === JSON.stringify(defaultQuick[0])
+        const select = $('serial-quick-send')
+        if (select) Array.from(select.options).forEach((option, index) => {
+            const item = groups[index]
+            if (item) option.textContent = pristine(item) ? I.t(item.name) : item.name
+        })
+        const translateDefaults = pristine(group())
+        document.querySelectorAll('#serial-quick-send-content .quick-item').forEach((row) => {
+            const item = group().list[Number(row.dataset.index)]
+            if (!item) return
+            const name = translateDefaults ? I.t(item.name) : item.name
+            const label = (selector, key, text) => {
+                const element = row.querySelector(selector)
+                if (!element) return
+                element.title = m(key, { name }); element.setAttribute('aria-label', element.title)
+                if (text !== undefined) element.textContent = text
+            }
+            label('.quick-send', '{name} 명령 전송', name)
+            label('.quick-remove', '{name} 명령 삭제')
+            label('.quick-load', '{name} 명령을 입력창에 담기 (전송하지 않음)', m('담기'))
+            const input = row.querySelector('input[type="text"]')
+            input.placeholder = m('명령 내용 · 더블클릭으로 이름 변경')
+            input.title = m('내용을 편집합니다. 이름은 더블클릭으로 바꿀 수 있습니다.')
+            input.setAttribute('aria-label', m('{name} 명령 내용', { name }))
+            row.querySelector('input[type="checkbox"]').setAttribute('aria-label', m('{name} 명령을 HEX로 전송', { name }))
+        })
     }
     function changeName(callback, previous = '') {
         if (!nameModal) {
-            const name = window.prompt('이름을 입력해 주세요. (최대 120자)', previous)
+            const name = window.prompt(m('이름을 입력해 주세요. (최대 120자)'), previous)
             if (name !== null && name.trim() && name.trim().length <= 120) callback(name.trim())
             return
         }
         const input = $('model-new-name'); input.value = previous; input.maxLength = 120; input.setCustomValidity('')
         const save = () => {
             const name = input.value.trim()
-            if (!name || name.length > 120) { input.setCustomValidity('이름은 1~120자로 입력해 주세요.'); input.reportValidity(); return }
+            if (!name || name.length > 120) { input.setCustomValidity(m('이름은 1~120자로 입력해 주세요.')); input.reportValidity(); return }
             callback(name); nameModal.hide()
         }
         $('model-save-name').onclick = save
@@ -807,9 +844,9 @@
     }
     function saveQuick() {
         try { groups = U.validateQuickSendList(groups); validGroups = structuredClone(groups); saveConfig() }
-        catch (error) { groups = structuredClone(validGroups); renderQuick(); message(errorText(error), '빠른 명령 확인') }
+        catch (error) { groups = structuredClone(validGroups); renderQuick(); message(errorText(error), m('빠른 명령 확인')) }
     }
-    function fileName(name) { return String(name).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/g, '').slice(0, 100) || '시리얼' }
+    function fileName(name) { return String(name).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/g, '').slice(0, 100) || m('시리얼') }
     function download(blob, filename) {
         const url = URL.createObjectURL(blob), link = document.createElement('a')
         link.href = url; link.download = filename; link.hidden = true; document.body.appendChild(link); link.click(); link.remove()
@@ -817,20 +854,20 @@
     }
     function downloadJSON(value, filename) {
         const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json;charset=utf-8' })
-        if (blob.size > MAX_FILE) throw new Error('백업 파일이 2 MiB를 넘습니다. 전송 기록이나 명령을 나누어 보관해 주세요.')
+        if (blob.size > MAX_FILE) throw I.error(m('백업 파일이 2 MiB를 넘습니다. 전송 기록이나 명령을 나누어 보관해 주세요.'))
         download(blob, filename)
     }
     async function readFile(input, limit = MAX_FILE) {
         const file = input.files?.[0]; input.value = ''
         if (!file) return null
-        if (file.size > limit) throw new Error('파일 크기는 ' + U.formatBytes(limit) + ' 이하여야 합니다.')
+        if (file.size > limit) throw I.error(m('파일 크기는 {limit} 이하여야 합니다.', { limit: U.formatBytes(limit) }))
         return file.text()
     }
     function filteredLogText() {
         const lines = []
         for (const entry of entries) {
             if (!matches(entry)) continue
-            const prefix = (prefs.showTime ? U.formatTimestamp(entry.date) + ' ' : '') + '[' + (entry.direction === 'system' ? '안내' : entry.direction.toUpperCase()) + '] '
+            const prefix = (prefs.showTime ? U.formatTimestamp(entry.date) + ' ' : '') + '[' + (entry.direction === 'system' ? m('안내') : entry.direction.toUpperCase()) + '] '
             if (entry.direction === 'system') lines.push(prefix + visibleText(entry.text))
             else {
                 if (prefs.logType.includes('hex')) lines.push(prefix + (prefs.logType === 'hex&text' ? 'HEX ' : '') + U.bytesToHex(entry.bytes))
@@ -841,16 +878,16 @@
     }
     async function copyLogs() {
         const text = filteredLogText()
-        if (!text) { message('현재 필터에 맞는 로그가 없습니다.'); return }
+        if (!text) { message(m('현재 필터에 맞는 로그가 없습니다.')); return }
         try {
             if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text)
             else {
                 const textarea = document.createElement('textarea'); textarea.value = text; textarea.style.position = 'fixed'; textarea.style.left = '-9999px'; document.body.appendChild(textarea)
-                try { textarea.select(); if (!document.execCommand('copy')) throw new Error('브라우저에서 복사를 허용하지 않았습니다.') }
+                try { textarea.select(); if (!document.execCommand('copy')) throw I.error(m('브라우저에서 복사를 허용하지 않았습니다.')) }
                 finally { textarea.remove() }
             }
-            message('현재 필터에 맞는 보관 로그를 복사했습니다.')
-        } catch (error) { message('로그를 복사하지 못했습니다. 로그 저장을 이용해 주세요. ' + errorText(error)) }
+            message(m('현재 필터에 맞는 보관 로그를 복사했습니다.'))
+        } catch (error) { message(m('로그를 복사하지 못했습니다. 로그 저장을 이용해 주세요. {error}', { error: errorText(error) })) }
     }
     function currentCode() { return editor ? editor.getValue() : $('serial-code-content').value }
     function setupEditor() {
@@ -863,7 +900,7 @@
         }
         if (window.CodeMirror?.fromTextArea) {
             editor = CodeMirror.fromTextArea(textarea, { lineNumbers: true, indentUnit: 4, styleActiveLine: true, matchBrackets: true, mode: 'javascript', theme: 'idea', lineWrapping: true })
-            editor.on('change', persist); editor.getWrapperElement().setAttribute('aria-label', '시리얼 스크립트 편집기')
+            editor.on('change', persist); editor.getWrapperElement().setAttribute('aria-label', m('시리얼 스크립트 편집기'))
         } else textarea.addEventListener('input', persist)
         on('nav-code-tab', 'shown.bs.tab', () => editor?.refresh())
     }
@@ -875,16 +912,16 @@
         workerURL = null
         if (editor) { editor.setOption('readOnly', false); editor.getWrapperElement().classList.remove('CodeMirror-readonly') }
         else if ($('serial-code-content')) $('serial-code-content').readOnly = false
-        if ($('serial-code-run')) buttonLabel('serial-code-run', '실행', 'bi-play')
+        if ($('serial-code-run')) buttonLabel('serial-code-run', m('실행'), 'bi-play')
         if ($('serial-code-load')) $('serial-code-load').disabled = false
         updateFunsr()
     }
     function workerData(value) {
         if (value instanceof ArrayBuffer) value = new Uint8Array(value)
-        if (!(value instanceof Uint8Array) && !Array.isArray(value)) throw new Error('uart_send의 data에는 바이트 배열을 넣어 주세요.')
-        if (!value.length || value.length > MAX_SEND) throw new Error('스크립트 전송 데이터는 1~65,536 바이트여야 합니다.')
+        if (!(value instanceof Uint8Array) && !Array.isArray(value)) throw I.error(m('uart_send의 data에는 바이트 배열을 넣어 주세요.'))
+        if (!value.length || value.length > MAX_SEND) throw I.error(m('스크립트 전송 데이터는 1~65,536 바이트여야 합니다.'))
         if (Array.isArray(value)) for (let index = 0; index < value.length; index++) {
-            if (!Number.isInteger(value[index]) || value[index] < 0 || value[index] > 255) throw new Error('바이트 배열에는 빠짐없이 0~255 정수만 사용할 수 있습니다.')
+            if (!Number.isInteger(value[index]) || value[index] < 0 || value[index] > 255) throw I.error(m('바이트 배열에는 빠짐없이 0~255 정수만 사용할 수 있습니다.'))
         }
         return Uint8Array.from(value)
     }
@@ -894,26 +931,26 @@
             if (Date.now() - workerWindow >= 1000) { workerWindow = Date.now(); workerMessages = 0; workerBytes = 0 }
             workerMessages++
             const data = event.data
-            if (!data || typeof data !== 'object' || typeof data.type !== 'string') throw new Error('스크립트 메시지 형식이 올바르지 않습니다.')
+            if (!data || typeof data !== 'object' || typeof data.type !== 'string') throw I.error(m('스크립트 메시지 형식이 올바르지 않습니다.'))
             workerBytes += typeof data.data === 'string' ? data.data.length * 2 : Number(data.data?.byteLength || data.data?.length || 0)
-            if (workerMessages > 200 || workerBytes > 1024 * 1024) throw new Error('스크립트 메시지가 너무 많습니다. 전송 간격을 늘려 주세요.')
-            if (data.type === 'log') systemLog('스크립트 · ' + String(typeof data.data === 'string' ? data.data : JSON.stringify(data.data)).slice(0, MAX_ENTRY))
+            if (workerMessages > 200 || workerBytes > 1024 * 1024) throw I.error(m('스크립트 메시지가 너무 많습니다. 전송 간격을 늘려 주세요.'))
+            if (data.type === 'log') systemLog(m('스크립트 · {message}', { message: String(typeof data.data === 'string' ? data.data : JSON.stringify(data.data)).slice(0, MAX_ENTRY) }))
             else if (data.type === 'uart_send') await transmit(workerData(data.data))
             else if (data.type === 'uart_send_hex' || data.type === 'uart_send_txt') await transmit(sendRecord(data.data, data.type === 'uart_send_hex', prefs.lineEnding).bytes)
-            else throw new Error('지원하지 않는 스크립트 메시지입니다: ' + data.type.slice(0, 80))
+            else throw I.error(m('지원하지 않는 스크립트 메시지입니다: {type}', { type: data.type.slice(0, 80) }))
         } catch (error) {
             if (source !== worker) return
-            stopWorker(); stopLoop(); systemLog('스크립트를 중지했습니다. ' + errorText(error))
+            stopWorker(); stopLoop(); systemLog(m('스크립트를 중지했습니다. {error}', { error: errorText(error) }))
         }
     }
     function runWorker() {
-        if (worker) { stopWorker(); systemLog('스크립트를 중지했습니다.'); return }
-        if (funsrPending) { message('FUNSR PRO 저장 응답 확인이 끝난 뒤 스크립트를 실행해 주세요.'); return }
+        if (worker) { stopWorker(); systemLog(m('스크립트를 중지했습니다.')); return }
+        if (funsrPending) { message(m('FUNSR PRO 저장 응답 확인이 끝난 뒤 스크립트를 실행해 주세요.')); return }
         const value = currentCode()
-        if (!value.trim()) { message('실행할 스크립트를 입력해 주세요.'); return }
-        if (value.length > MAX_CODE) { message('스크립트는 262,144자 이하여야 합니다.'); return }
-        if (!window.Worker) { message('이 브라우저는 스크립트 실행을 지원하지 않습니다.'); return }
-        if (!window.confirm('스크립트는 연결된 장치에 데이터를 전송하고 네트워크 요청을 실행할 수 있습니다. 신뢰할 수 있는 코드를 확인한 뒤에만 실행해 주세요. 실행할까요?')) return
+        if (!value.trim()) { message(m('실행할 스크립트를 입력해 주세요.')); return }
+        if (value.length > MAX_CODE) { message(m('스크립트는 262,144자 이하여야 합니다.')); return }
+        if (!window.Worker) { message(m('이 브라우저는 스크립트 실행을 지원하지 않습니다.')); return }
+        if (!window.confirm(m('스크립트는 연결된 장치에 데이터를 전송하고 네트워크 요청을 실행할 수 있습니다. 신뢰할 수 있는 코드를 확인한 뒤에만 실행해 주세요. 실행할까요?'))) return
         try {
             code = value; saveConfig()
             workerURL = URL.createObjectURL(new Blob([value], { type: 'text/javascript' })); worker = new Worker(workerURL)
@@ -923,16 +960,16 @@
             source.onerror = (event) => {
                 event.preventDefault()
                 if (source !== worker) return
-                stopWorker(); stopLoop(); systemLog('스크립트 실행 오류' + (event.lineno ? ' (' + event.lineno + '행)' : '') + ': ' + String(event.message || '코드를 확인해 주세요.').slice(0, 500))
+                stopWorker(); stopLoop(); systemLog(m(event.lineno ? '스크립트 실행 오류 ({line}행): {error}' : '스크립트 실행 오류: {error}', { line: event.lineno, error: String(event.message || I.t('코드를 확인해 주세요.')).slice(0, 500) }))
             }
-            source.onmessageerror = () => { if (source === worker) { stopWorker(); systemLog('스크립트 메시지를 해석하지 못해 실행을 중지했습니다.') } }
+            source.onmessageerror = () => { if (source === worker) { stopWorker(); systemLog(m('스크립트 메시지를 해석하지 못해 실행을 중지했습니다.')) } }
             if (editor) { editor.setOption('readOnly', 'nocursor'); editor.getWrapperElement().classList.add('CodeMirror-readonly') }
             else $('serial-code-content').readOnly = true
-            buttonLabel('serial-code-run', '중지', 'bi-stop')
+            buttonLabel('serial-code-run', m('중지'), 'bi-stop')
             if ($('serial-code-load')) $('serial-code-load').disabled = true
-            systemLog('스크립트를 실행했습니다. 탭이 숨겨지면 브라우저가 타이머를 늦출 수 있습니다.')
+            systemLog(m('스크립트를 실행했습니다. 탭이 숨겨지면 브라우저가 타이머를 늦출 수 있습니다.'))
             updateFunsr()
-        } catch (error) { stopWorker(); systemLog('스크립트를 실행하지 못했습니다. ' + errorText(error)) }
+        } catch (error) { stopWorker(); systemLog(m('스크립트를 실행하지 못했습니다. {error}', { error: errorText(error) })) }
     }
     function applyImport(value) {
         stopLoop(); stopWorker(); options = value.serialOptions; prefs = value.toolOptions; prefs.loopSend = false; groups = value.quickSendList; validGroups = structuredClone(groups); replaceCode(value.code)
@@ -950,7 +987,31 @@
     let counterTimer = setInterval(updateCounters, 1000)
     const searchHint = document.querySelector('.search-field kbd')
     if (searchHint) searchHint.textContent = MODIFIER_KEY + ' K'
-    if ($('serial-clear')) $('serial-clear').title = '로그 비우기 (' + MODIFIER_KEY + '+L)'
+    if ($('serial-clear')) $('serial-clear').title = m('로그 비우기 ({modifier}+L)', { modifier: MODIFIER_KEY })
+    window.addEventListener('serial-language-change', (event) => {
+        // Refresh labels only: never reload preferences, recreate editors/inputs,
+        // reset a connection, cancel an ACK, or enqueue any device operation.
+        applyTheme(); updateLogButtons(); updateByteCount(); updateConnection(); updateEmptyState(); updateQuickLabels()
+        const selectedHistory = $('serial-history')?.value
+        renderHistory()
+        if ($('serial-history')) $('serial-history').value = selectedHistory
+        editor?.getWrapperElement().setAttribute('aria-label', m('시리얼 스크립트 편집기'))
+        buttonLabel('serial-code-run', worker ? m('중지') : m('실행'), worker ? 'bi-stop' : 'bi-play')
+        if ($('serial-clear')) $('serial-clear').title = m('로그 비우기 ({modifier}+L)', { modifier: MODIFIER_KEY })
+        for (const row of logs.children) {
+            const badge = row.querySelector('.log-direction')
+            if (badge) {
+                badge.setAttribute('aria-label', row.dataset.direction === 'rx' ? m('수신') : row.dataset.direction === 'tx' ? m('송신') : m('시스템 안내'))
+                if (row.dataset.direction === 'system') badge.textContent = m('안내')
+            }
+        }
+        if (lastNotice) {
+            $('modal-title').textContent = lastNotice.title
+            $('modal-message').textContent = String(lastNotice.text).slice(0, 4000)
+        }
+        if ($('model-new-name')?.validity.customError) $('model-new-name').setCustomValidity(m('이름은 1~120자로 입력해 주세요.'))
+        if (!event.detail.saved) storageWarning()
+    })
     // Follow the OS theme while no explicit light/dark choice has been made.
     window.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener?.('change', () => { if (!['light', 'dark'].includes(prefs.theme)) applyTheme() })
 
@@ -982,8 +1043,8 @@
     on('serial-copy', 'click', () => { void copyLogs() })
     on('serial-save', 'click', () => {
         const text = filteredLogText()
-        if (!text) { message('현재 필터에 맞는 로그가 없습니다.'); return }
-        download(new Blob(['\uFEFF', text], { type: 'text/plain;charset=utf-8' }), '시리얼-로그-' + new Date().toISOString().replace(/[:.]/g, '-') + '.txt')
+        if (!text) { message(m('현재 필터에 맞는 로그가 없습니다.')); return }
+        download(new Blob(['\uFEFF', text], { type: 'text/plain;charset=utf-8' }), m('시리얼-로그-') + new Date().toISOString().replace(/[:.]/g, '-') + '.txt')
     })
     on('serial-theme', 'click', () => { setPref('theme', document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); applyTheme(); writeStorage(THEME_KEY, prefs.theme) })
     on('serial-auto-scroll', 'click', () => { setPref('autoScroll', !prefs.autoScroll); updateLogButtons(); renderSoon() })
@@ -999,12 +1060,12 @@
     on('serial-encoding', 'change', (event) => {
         flushReceive(); const tail = decoder.flush(); if (tail) addEntry('rx', new Uint8Array(), tail)
         setPref('encoding', event.target.value); resetDecoder(false)
-        systemLog('이후 수신 문자의 인코딩을 ' + prefs.encoding.toUpperCase() + '(으)로 변경했습니다. 텍스트 전송은 UTF-8입니다.')
+        systemLog(m('이후 수신 문자의 인코딩을 {encoding}(으)로 변경했습니다. 텍스트 전송은 UTF-8입니다.', { encoding: prefs.encoding.toUpperCase() }))
     })
     for (const id of Object.values(hardwareFields)) on(id, 'change', () => {
         if (opened || busy || mayBeOpen) return
         try { options = readOptions(); setPref('preset', 'custom'); if ($('serial-preset')) $('serial-preset').value = 'custom'; saveConfig() }
-        catch (error) { message(errorText(error), '연결 설정 확인') }
+        catch (error) { message(errorText(error), m('연결 설정 확인')) }
     })
     on('serial-preset', 'change', (event) => {
         if (connected() || busy || mayBeOpen) return
@@ -1032,7 +1093,7 @@
     on('serial-loop-send-time', 'change', (event) => { if (loopActive) stopLoop(); setPref('loopSendTime', Number(event.target.value)); event.target.value = prefs.loopSendTime })
     on('serial-history', 'change', (event) => { if (event.target.value !== '' && history[Number(event.target.value)]) fillComposer(history[Number(event.target.value)]) })
     on('serial-history-clear', 'click', () => {
-        if (!window.confirm('이 페이지에 저장된 전송 기록을 모두 지울까요? 빠른 명령과 로그는 유지됩니다.')) return
+        if (!window.confirm(m('이 페이지에 저장된 전송 기록을 모두 지울까요? 빠른 명령과 로그는 유지됩니다.'))) return
         history = []; historyCursor = -1; historyDraft = null; historyBlocked = false; writeStorage(HISTORY_KEY, '[]'); renderHistory()
     })
     document.addEventListener('keydown', (event) => {
@@ -1056,12 +1117,12 @@
         const index = Number(row.dataset.index), item = group().list[index]
         if (!item) return
         if (button.classList.contains('quick-remove')) {
-            if (!window.confirm('“' + item.name + '” 명령을 삭제할까요?')) return
+            if (!window.confirm(m('“{name}” 명령을 삭제할까요?', { name: item.name }))) return
             group().list.splice(index, 1); saveQuick(); renderQuick()
         } else if (button.classList.contains('quick-load')) fillComposer({ ...item, lineEnding: prefs.lineEnding })
         else if (button.classList.contains('quick-send')) {
             try { const record = sendRecord(item.content, item.hex, prefs.lineEnding); if (!confirmCommand(record)) return; await transmit(record.bytes); remember(record) }
-            catch (error) { stopLoop(); systemLog('빠른 명령을 전송하지 못했습니다. ' + errorText(error)) }
+            catch (error) { stopLoop(); systemLog(m('빠른 명령을 전송하지 못했습니다. {error}', { error: errorText(error) })) }
         }
     })
     on('serial-quick-send-content', 'dblclick', (event) => {
@@ -1078,22 +1139,22 @@
         saveQuick()
     })
     on('serial-quick-send-add', 'click', () => {
-        if (group().list.length >= 200 || groups.reduce((sum, item) => sum + item.list.length, 0) >= 1000) { message('그룹당 200개, 전체 1,000개까지 빠른 명령을 보관할 수 있습니다.'); return }
-        group().list.push({ name: '새 명령', content: '', hex: false }); saveQuick(); renderQuick()
+        if (group().list.length >= 200 || groups.reduce((sum, item) => sum + item.list.length, 0) >= 1000) { message(m('그룹당 200개, 전체 1,000개까지 빠른 명령을 보관할 수 있습니다.')); return }
+        group().list.push({ name: I.t('새 명령'), content: '', hex: false }); saveQuick(); renderQuick()
         $('serial-quick-send-content').lastElementChild?.querySelector('input[type=text]')?.focus()
     })
     on('serial-quick-send-add-group', 'click', () => {
-        if (groups.length >= 50) { message('빠른 명령 그룹은 최대 50개까지 만들 수 있습니다.'); return }
+        if (groups.length >= 50) { message(m('빠른 명령 그룹은 최대 50개까지 만들 수 있습니다.')); return }
         changeName((name) => { groups.push({ name, list: [] }); prefs.quickSendIndex = groups.length - 1; saveQuick(); renderQuick() })
     })
     on('serial-quick-send-rename-group', 'click', () => { const selectedGroup = group(); changeName((name) => { selectedGroup.name = name; saveQuick(); renderQuick() }, selectedGroup.name) })
     on('serial-quick-send-remove-group', 'click', () => {
-        if (groups.length <= 1 || !window.confirm('“' + group().name + '” 그룹과 안의 명령을 삭제할까요?')) return
+        if (groups.length <= 1 || !window.confirm(m('“{name}” 그룹과 안의 명령을 삭제할까요?', { name: group().name }))) return
         groups.splice(prefs.quickSendIndex, 1); prefs.quickSendIndex = 0; saveQuick(); renderQuick()
     })
     on('serial-quick-send-export', 'click', () => {
         try { downloadJSON(group().list, fileName(group().name) + '.json') }
-        catch (error) { message('빠른 명령을 내보내지 못했습니다. ' + errorText(error)) }
+        catch (error) { message(m('빠른 명령을 내보내지 못했습니다. {error}', { error: errorText(error) })) }
     })
     on('serial-quick-send-import-btn', 'click', () => $('serial-quick-send-import').click())
     on('serial-quick-send-import', 'change', async (event) => {
@@ -1101,40 +1162,40 @@
             const text = await readFile(event.target)
             if (text === null) return
             const value = JSON.parse(text)
-            if (!Array.isArray(value)) throw new Error('빠른 명령 JSON에는 명령 또는 그룹 배열이 있어야 합니다.')
-            if (value.length > 1000) throw new Error('빠른 명령은 전체 1,000개를 넘을 수 없습니다.')
+            if (!Array.isArray(value)) throw I.error(m('빠른 명령 JSON에는 명령 또는 그룹 배열이 있어야 합니다.'))
+            if (value.length > 1000) throw I.error(m('빠른 명령은 전체 1,000개를 넘을 수 없습니다.'))
             if (value.length && value.every((item) => item && Array.isArray(item.list))) groups = U.validateQuickSendList([...groups, ...value])
             else { const candidate = structuredClone(groups); candidate[prefs.quickSendIndex].list.push(...value); groups = U.validateQuickSendList(candidate) }
-            saveQuick(); renderQuick(); message('빠른 명령을 추가했습니다. 명령을 선택하거나 가져와도 자동 전송하지 않습니다.')
-        } catch (error) { message('빠른 명령 가져오기에 실패했습니다. 기존 명령은 유지됩니다. ' + errorText(error)) }
+            saveQuick(); renderQuick(); message(m('빠른 명령을 추가했습니다. 명령을 선택하거나 가져와도 자동 전송하지 않습니다.'))
+        } catch (error) { message(m('빠른 명령 가져오기에 실패했습니다. 기존 명령은 유지됩니다. {error}', { error: errorText(error) })) }
     })
     on('serial-export', 'click', () => {
         try {
             if (!opened) options = readOptions()
             code = currentCode(); const value = envelope(true); U.parseImportedConfig(value)
-            downloadJSON(value, 'web-serial-debug-kr-config.json')
-        } catch (error) { message('설정을 내보내지 못했습니다. ' + errorText(error)) }
+            downloadJSON(value, 'web-serial-debug-config.json')
+        } catch (error) { message(m('설정을 내보내지 못했습니다. {error}', { error: errorText(error) })) }
     })
     on('serial-import', 'click', () => {
-        if (connected() || mayBeOpen || busy) { message('포트 연결을 해제한 뒤 설정을 가져와 주세요.'); return }
+        if (connected() || mayBeOpen || busy) { message(m('포트 연결을 해제한 뒤 설정을 가져와 주세요.')); return }
         $('serial-import-file').click()
     })
     on('serial-import-file', 'change', async (event) => {
         try {
             const text = await readFile(event.target)
             if (text === null) return
-            if (connected() || mayBeOpen || busy) throw new Error('먼저 포트 연결을 해제해 주세요.')
+            if (connected() || mayBeOpen || busy) throw I.error(m('먼저 포트 연결을 해제해 주세요.'))
             const value = U.parseImportedConfig(JSON.parse(text))
-            if (!window.confirm('현재 연결 설정·빠른 명령·스크립트를 가져온 설정으로 바꿀까요?' + (value.history ? ' 전송 기록도 교체됩니다.' : '') + ' 가져온 스크립트는 실행하지 않습니다.')) return
-            applyImport(value); message('설정을 가져왔습니다. 포트 연결·전송·스크립트는 직접 실행할 때만 시작합니다.')
-        } catch (error) { message('설정 가져오기에 실패했습니다. 기존 설정은 유지됩니다. ' + errorText(error)) }
+            if (!window.confirm(m(value.history ? '현재 연결 설정·빠른 명령·스크립트를 가져온 설정으로 바꿀까요? 전송 기록도 교체됩니다. 가져온 스크립트는 실행하지 않습니다.' : '현재 연결 설정·빠른 명령·스크립트를 가져온 설정으로 바꿀까요? 가져온 스크립트는 실행하지 않습니다.'))) return
+            applyImport(value); message(m('설정을 가져왔습니다. 포트 연결·전송·스크립트는 직접 실행할 때만 시작합니다.'))
+        } catch (error) { message(m('설정 가져오기에 실패했습니다. 기존 설정은 유지됩니다. {error}', { error: errorText(error) })) }
     })
     on('serial-reset', 'click', () => {
-        if (connected() || mayBeOpen || busy) { message('포트 연결을 해제한 뒤 초기화해 주세요.'); return }
-        if (!window.confirm('이 페이지의 연결·도구 설정, 빠른 명령, 스크립트, 전송 기록을 초기화할까요? 현재 로그와 이전 버전의 원본 저장 데이터는 유지됩니다.')) return
+        if (connected() || mayBeOpen || busy) { message(m('포트 연결을 해제한 뒤 초기화해 주세요.')); return }
+        if (!window.confirm(m('이 페이지의 연결·도구 설정, 빠른 명령, 스크립트, 전송 기록을 초기화할까요? 현재 로그와 이전 버전의 원본 저장 데이터는 유지됩니다.'))) return
         historyBlocked = false
         applyImport({ serialOptions: U.validateSerialOptions({}), toolOptions: U.normalizeToolOptions({}), quickSendList: structuredClone(defaultQuick), code: defaultCode, history: [] })
-        message('기본 설정으로 초기화했습니다. 보관 중인 로그는 유지했습니다.')
+        message(m('기본 설정으로 초기화했습니다. 보관 중인 로그는 유지했습니다.'))
     })
     on('serial-code-run', 'click', runWorker)
     on('serial-code-load', 'click', () => $('serial-code-select').click())
@@ -1142,10 +1203,10 @@
         try {
             const value = await readFile(event.target)
             if (value === null) return
-            if (value.length > MAX_CODE) throw new Error('스크립트는 262,144자 이하여야 합니다.')
-            if (currentCode().trim() && !window.confirm('현재 편집 중인 스크립트를 파일 내용으로 바꿀까요? 코드는 자동 실행하지 않습니다.')) return
+            if (value.length > MAX_CODE) throw I.error(m('스크립트는 262,144자 이하여야 합니다.'))
+            if (currentCode().trim() && !window.confirm(m('현재 편집 중인 스크립트를 파일 내용으로 바꿀까요? 코드는 자동 실행하지 않습니다.'))) return
             stopWorker(); replaceCode(value); saveConfig()
-        } catch (error) { message('스크립트 파일을 읽지 못했습니다. ' + errorText(error)) }
+        } catch (error) { message(m('스크립트 파일을 읽지 못했습니다. {error}', { error: errorText(error) })) }
     })
     document.querySelectorAll('.toggle-button').forEach((button) => {
         button.addEventListener('click', () => {
@@ -1159,7 +1220,7 @@
     on('model-change-name', 'shown.bs.modal', () => { $('model-new-name').focus(); $('model-new-name').select() })
     $('model-change-name')?.querySelector('form')?.addEventListener('submit', (event) => event.preventDefault())
     window.addEventListener('pagehide', () => {
-        resetFunsrSession('페이지가 닫히거나 이동했습니다.')
+        resetFunsrSession(m('페이지가 닫히거나 이동했습니다.'))
         stopLoop(); stopWorker(); clearInterval(counterTimer)
         clearTimeout(rxTimer)
         if (opened || mayBeOpen) void closeSerial(true)

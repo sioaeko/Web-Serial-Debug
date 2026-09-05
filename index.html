@@ -6,7 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#ffffff">
-    <meta name="description" content="설치 없이 브라우저에서 사용하는 한국어 웹 시리얼 디버거. Arduino, ESP32, USB-UART 연결, 한글 로그, HEX 전송, 명령 모음을 지원합니다.">
+    <meta name="description" content="한국어·영어·중국어로 사용하는 웹 시리얼 디버거. Arduino, ESP32, USB-UART 연결, 텍스트·HEX 전송과 명령 모음을 지원합니다.">
     <title>Web Serial Debug</title>
     <script>
         // Apply the saved or system theme before the first paint so dark-mode
@@ -45,9 +45,10 @@
             <div class="brand-copy"><h1>Web Serial Debug</h1></div>
         </div>
         <nav class="header-actions" aria-label="앱 메뉴">
+            <div class="language-control"><label class="visually-hidden" for="serial-language">언어</label><i class="bi bi-translate" aria-hidden="true"></i><select id="serial-language" name="language" class="form-select language-select"><option value="auto">자동</option><option value="ko" lang="ko" translate="no">한국어</option><option value="en" lang="en" translate="no">English</option><option value="zh-CN" lang="zh-CN" translate="no">简体中文</option></select></div>
             <button class="btn btn-quiet icon-button" type="button" data-bs-toggle="modal" data-bs-target="#model-help" title="사용 안내 및 단축키" aria-label="사용 안내 및 단축키"><i class="bi bi-question-circle" aria-hidden="true"></i></button>
             <button class="btn btn-quiet icon-button" type="button" id="serial-theme" title="다크 모드로 전환" aria-label="다크 모드로 전환"><i class="bi bi-moon" aria-hidden="true"></i></button>
-            <a class="btn btn-quiet github-link" href="https://github.com/sioaeko/Web-Serial-Debug-KR" target="_blank" rel="noopener noreferrer" aria-label="GitHub 소스 코드 (새 탭)"><i class="bi bi-github" aria-hidden="true"></i><span>GitHub</span><i class="bi bi-arrow-up-right external-arrow" aria-hidden="true"></i></a>
+            <a class="btn btn-quiet github-link" href="https://github.com/sioaeko/Web-Serial-Debug" target="_blank" rel="noopener noreferrer" aria-label="GitHub 소스 코드 (새 탭)"><i class="bi bi-github" aria-hidden="true"></i><span>GitHub</span><i class="bi bi-arrow-up-right external-arrow" aria-hidden="true"></i></a>
         </nav>
     </header>
 
@@ -256,11 +257,11 @@ addEventListener('message', function ({ data }) {
     <div class="modal fade" id="model-tip" aria-hidden="true" tabindex="-1" aria-labelledby="modal-title"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="modal-title">알림</h2><button class="btn-close" data-bs-dismiss="modal" aria-label="닫기" type="button"></button></div><div class="modal-body" id="modal-message"></div><div class="modal-footer"><button class="btn btn-primary" data-bs-dismiss="modal" type="button">확인</button></div></div></div></div>
     <div class="modal fade" id="model-change-name" tabindex="-1" aria-hidden="true" aria-labelledby="new-name-title"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="new-name-title">이름 설정</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button></div><div class="modal-body"><label for="model-new-name" class="field-label">새 이름</label><input type="text" class="form-control" id="model-new-name" maxlength="80" autocomplete="off"></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button><button type="button" class="btn btn-primary" id="model-save-name">저장</button></div></div></div></div>
     <div class="modal fade" id="model-help" tabindex="-1" aria-hidden="true" aria-labelledby="help-title"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="help-title">처음 사용하는 시리얼 디버그</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button></div><div class="modal-body help-content">
-        <section><h3>연결부터 전송까지</h3><ol><li>USB 케이블로 장치를 연결하고 <strong>포트 선택</strong>을 누릅니다.</li><li>장치에 맞는 통신 속도와 옵션을 선택한 후 <strong>연결하기</strong>를 누릅니다.</li><li>장치 출력은 로그에서 확인하고, 아래 입력창에서 데이터를 전송합니다.</li></ol><p>Arduino 시리얼 모니터 등 다른 프로그램이 포트를 사용 중이면 먼저 연결을 해제하세요. USB-UART 드라이버가 필요한 장치는 제조사 드라이버를 설치해야 합니다.</p></section>
-        <section><h3>한글이 깨져 보이나요?</h3><p>수신 인코딩을 <strong>UTF-8</strong> 또는 <strong>EUC-KR (CP949)</strong>로 바꿔 보세요. 텍스트 전송은 UTF-8입니다. 다른 송신 인코딩이 필요한 경우 해당 바이트를 HEX로 전송하세요.</p></section>
+        <section><h3>연결부터 전송까지</h3><ol><li>USB 케이블로 장치를 연결하고 포트 선택을 누릅니다.</li><li>장치에 맞는 통신 속도와 옵션을 선택한 후 연결하기를 누릅니다.</li><li>장치 출력은 로그에서 확인하고, 아래 입력창에서 데이터를 전송합니다.</li></ol><p>Arduino 시리얼 모니터 등 다른 프로그램이 포트를 사용 중이면 먼저 연결을 해제하세요. USB-UART 드라이버가 필요한 장치는 제조사 드라이버를 설치해야 합니다.</p></section>
+        <section><h3>한글이 깨져 보이나요?</h3><p>수신 인코딩을 UTF-8 또는 EUC-KR (CP949)로 바꿔 보세요. 텍스트 전송은 UTF-8입니다. 다른 송신 인코딩이 필요한 경우 해당 바이트를 HEX로 전송하세요.</p></section>
         <section><h3>알아두면 편한 단축키</h3><dl class="shortcut-list"><div><dt><kbd>Ctrl</kbd> + <kbd>Enter</kbd></dt><dd>데이터 전송</dd></div><div><dt><kbd>Ctrl</kbd> + <kbd>K</kbd></dt><dd>로그 검색</dd></div><div><dt><kbd>Ctrl</kbd> + <kbd>L</kbd></dt><dd>로그 비우기 (확인 후 삭제)</dd></div><div><dt><kbd>Alt</kbd> + <kbd>↑ / ↓</kbd></dt><dd>전송 입력창에서 기록 탐색</dd></div></dl><p>macOS에서는 Ctrl 대신 ⌘ Command를 사용하세요. 한글 조합 중에는 전송 단축키가 작동하지 않습니다.</p></section>
         <section><h3>지원 환경과 개인정보</h3><p>데스크톱 Chrome·Edge와 HTTPS 또는 localhost 환경에서 사용하세요. Firefox·Safari·대부분의 모바일 브라우저에서는 실제 시리얼 연결을 지원하지 않습니다.</p><p>로그는 메모리에만 보관되고 설정·전송 기록은 이 브라우저에 저장됩니다. 사이트에는 분석·추적 스크립트가 없습니다. 로그와 설정을 공유하기 전 비밀번호나 장치 식별 정보가 없는지 확인하세요. 사용자 스크립트는 별도 네트워크 요청을 할 수 있으므로 신뢰하는 코드만 실행하세요.</p></section>
-    </div><div class="modal-footer"><a class="btn btn-outline-secondary" href="https://github.com/sioaeko/Web-Serial-Debug-KR#readme" target="_blank" rel="noopener noreferrer">전체 사용 안내 <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a><button class="btn btn-primary" data-bs-dismiss="modal" type="button">시작하기</button></div></div></div></div>
+    </div><div class="modal-footer"><a class="btn btn-outline-secondary" href="https://github.com/sioaeko/Web-Serial-Debug#readme" target="_blank" rel="noopener noreferrer">전체 사용 안내 <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a><button class="btn btn-primary" data-bs-dismiss="modal" type="button">시작하기</button></div></div></div></div>
     <noscript><div class="noscript-warning">이 도구를 사용하려면 브라우저에서 JavaScript를 허용해 주세요.</div></noscript>
     <script src="vendor/bootstrap/bootstrap.bundle.min.js"></script>
     <script src="vendor/codemirror/codemirror.min.js"></script>
@@ -268,6 +269,8 @@ addEventListener('message', function ({ data }) {
     <script src="vendor/codemirror/matchbrackets.min.js"></script>
     <script src="vendor/codemirror/javascript.min.js"></script>
     <script src="js/ansi_up.min.js"></script>
+    <script src="js/messages.js"></script>
+    <script src="js/i18n.js"></script>
     <script src="js/serial-utils.js"></script>
     <script src="js/common.js"></script>
 </body>

@@ -7,15 +7,15 @@ const { spawnSync } = require('node:child_process');
 const { PROJECT_ROOT, getPublicFiles, listFiles, isWithin, isPublicPath } = require('./files.cjs');
 
 const TRACKING = /sdk\.51\.la|hm\.baidu\.com|google-analytics\.com|googletagmanager\.com|cdn\.bootcdn\.net|LA_COLLECT/i;
-const PAGES_BASE = 'https://example.github.io/Web-Serial-Debug-KR/';
+const PAGES_BASE = 'https://example.github.io/Web-Serial-Debug/';
 
 function assertAsset(reference, source, root, allowData = false) {
   if (!reference || reference.startsWith('#')) return;
   if (allowData && reference.startsWith('data:')) return;
   if (/^(?:[a-z][a-z\d+.-]*:|\/|\\)/i.test(reference)) throw new Error(`Assets must be local relative URLs: ${source} -> ${reference}`);
   const resolved = new URL(reference, new URL(source.replaceAll(path.sep, '/'), PAGES_BASE));
-  if (!resolved.pathname.startsWith('/Web-Serial-Debug-KR/')) throw new Error(`Asset escapes the Pages subdirectory: ${reference}`);
-  const relative = decodeURIComponent(resolved.pathname.slice('/Web-Serial-Debug-KR/'.length));
+  if (!resolved.pathname.startsWith('/Web-Serial-Debug/')) throw new Error(`Asset escapes the Pages subdirectory: ${reference}`);
+  const relative = decodeURIComponent(resolved.pathname.slice('/Web-Serial-Debug/'.length));
   const file = path.resolve(root, relative);
   if (!isPublicPath(path.relative(root, file))) throw new Error(`Asset is outside the publication allowlist: ${source} -> ${reference}`);
   if (!isWithin(root, file) || !fs.existsSync(file) || !fs.statSync(file).isFile()) throw new Error(`Missing local asset: ${source} -> ${reference}`);
