@@ -196,6 +196,8 @@ test('each sidebar toggle closes and reopens only its own panel and stays outsid
   };
   for (const { button, panel } of controls) {
     assertToggleAvailable(button);
+    assert.equal(button.getAttribute('aria-expanded'), String(panel.classList.contains('show')), 'Initial markup already reports the expanded state');
+    assert.equal(button.getAttribute('aria-controls'), panel.id, 'Toggle references the panel it controls');
     if (!panel.classList.contains('show')) button.click();
     await until(() => panel.classList.contains('show'), 'sidebar initially opened through its toggle');
   }
@@ -213,6 +215,22 @@ test('each sidebar toggle closes and reopens only its own panel and stays outsid
     assert.equal(other.panel.classList.contains('show'), true);
     controls.forEach(({ button }) => assertToggleAvailable(button));
   }
+});
+
+test('quick command rows read and tab in their visual order: send, HEX, load, remove, then the editable content', async (t) => {
+  const { byId } = await fixture(t);
+  const row = byId('serial-quick-send-content').querySelector('.quick-item');
+  assert.ok(row, 'Default quick commands render');
+  const order = [...row.children].map((child) => [...child.classList].find((name) => name.startsWith('quick-')) || child.type);
+  assert.deepEqual(order, ['quick-send', 'quick-label', 'quick-load', 'quick-remove', 'text']);
+});
+
+test('action buttons whose label changes are not announced as pressed toggles', async (t) => {
+  const { byId } = await fixture(t);
+  for (const id of ['serial-theme', 'serial-open-or-close', 'serial-pause', 'serial-code-run']) {
+    assert.equal(byId(id).hasAttribute('aria-pressed'), false, `#${id} names its next action instead of a toggle state`);
+  }
+  assert.equal(byId('serial-auto-scroll').getAttribute('aria-pressed'), 'true', 'State-labelled toggles keep aria-pressed');
 });
 
 test('FUNSR speed controls expose the documented draft range and explicit apply contract with no demo surface', async (t) => {

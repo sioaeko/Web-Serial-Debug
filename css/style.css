@@ -38,6 +38,16 @@
     --warning-soft: #fef7e6;
     --terminal-bg: #ffffff;
     --terminal-grid: #ededed;
+    /* ANSI SGR 30-37 / 90-97 as rendered on --terminal-bg. Device output keeps
+       its colors, but each must stay legible on the current theme. */
+    --ansi-black: #3f3f3f;
+    --ansi-red: #c62828;
+    --ansi-green: #107c10;
+    --ansi-yellow: #8f6a00;
+    --ansi-blue: #1a5fb4;
+    --ansi-magenta: #a626a4;
+    --ansi-cyan: #0b7285;
+    --ansi-white: #6e6e6e;
     --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
     --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", "Malgun Gothic", monospace;
     --radius-sm: 4px;
@@ -85,6 +95,14 @@
     --warning-soft: #282012;
     --terminal-bg: #101010;
     --terminal-grid: #222222;
+    --ansi-black: #7b8496;
+    --ansi-red: #f87171;
+    --ansi-green: #4ade80;
+    --ansi-yellow: #facc15;
+    --ansi-blue: #60a5fa;
+    --ansi-magenta: #c084fc;
+    --ansi-cyan: #22d3ee;
+    --ansi-white: #cbd5e1;
 }
 
 * { box-sizing: border-box; }
@@ -106,6 +124,7 @@ body {
     font-family: var(--font-ui);
     font-size: 13px;
     line-height: 1.5;
+    word-break: keep-all; /* Wrap Korean UI copy between words, not mid-word. */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -261,17 +280,18 @@ h1, h2, h3, p { margin: 0; }
     background-position: right 8px center;
     background-size: 10px 8px;
 }
+/* The shared :focus-visible outline is the one focus indicator; a second
+   low-contrast ring around it only adds noise. */
 .form-control:focus, .form-select:focus {
     color: var(--text);
     background-color: var(--surface);
     border-color: var(--focus);
-    box-shadow: 0 0 0 2px var(--accent-soft);
+    box-shadow: none;
 }
 .form-control:disabled, .form-select:disabled {
     background-color: var(--surface-soft);
     color: var(--muted);
     border-color: var(--border);
-    opacity: .75;
     cursor: not-allowed;
 }
 .form-control::placeholder { color: var(--subtle); }
@@ -291,7 +311,7 @@ h1, h2, h3, p { margin: 0; }
 }
 .form-check-input:focus {
     border-color: var(--focus);
-    box-shadow: 0 0 0 2px var(--accent-soft);
+    box-shadow: none;
 }
 
 .check-label {
@@ -665,14 +685,15 @@ summary::-webkit-details-marker { display: none; }
     padding: 2px 0;
     background: transparent;
 }
-.search-field input:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 1px;
-}
+/* The bordered wrapper is the visible control, so it carries the focus ring
+   instead of an outline drawn around the bare input inside it. */
+.search-field input:focus-visible { outline: none; }
 .search-field input::placeholder { color: var(--subtle); }
 .search-field:focus-within {
     border-color: var(--focus);
     background: var(--surface);
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
 }
 .search-field kbd { font-size: 12px; }
 
@@ -774,10 +795,7 @@ summary::-webkit-details-marker { display: none; }
     scrollbar-color: var(--border-strong) transparent;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-}
-#serial-logs.ansi {
-    background: #0d1117;
-    color: #e6ebf2;
+    word-break: normal; /* Device output wraps like a terminal, not like UI prose. */
 }
 #serial-logs.no-wrap, #serial-logs.no-wrap .log-body, #serial-logs.no-wrap .log-text, #serial-logs.no-wrap .log-hex {
     white-space: pre;
@@ -855,6 +873,16 @@ summary::-webkit-details-marker { display: none; }
     letter-spacing: .3px;
 }
 .log-text { color: inherit; }
+/* ANSI SGR spans are classed by the parser; colors come from the theme tokens. */
+.ansi-0 { color: var(--ansi-black); }
+.ansi-1 { color: var(--ansi-red); }
+.ansi-2 { color: var(--ansi-green); }
+.ansi-3 { color: var(--ansi-yellow); }
+.ansi-4 { color: var(--ansi-blue); }
+.ansi-5 { color: var(--ansi-magenta); }
+.ansi-6 { color: var(--ansi-cyan); }
+.ansi-7 { color: var(--ansi-white); }
+.ansi-bold { font-weight: 700; }
 
 .empty-state {
     position: absolute;
@@ -980,10 +1008,17 @@ summary::-webkit-details-marker { display: none; }
     border-radius: var(--radius-sm);
     width: 100%;
 }
+/* The id selector above outranks Bootstrap's .is-invalid, so the invalid state
+   is restated here with the theme's danger color and without the icon. */
+#serial-send-content.is-invalid, #serial-send-content.is-invalid:focus {
+    border-color: var(--danger);
+    background-image: none;
+    box-shadow: none;
+}
 .byte-count {
     position: absolute;
     bottom: 5px;
-    right: 10px;
+    right: 24px; /* Clear of the textarea resize grip and scrollbar. */
     font-family: var(--font-mono);
     font-size: 12px;
     font-weight: 500;
@@ -991,6 +1026,10 @@ summary::-webkit-details-marker { display: none; }
     pointer-events: none;
     background: var(--surface);
     padding-left: 4px;
+}
+.composer-input-wrap:has(.is-invalid) .byte-count {
+    color: var(--danger);
+    font-weight: 600;
 }
 .send-options {
     display: flex;
@@ -1808,6 +1847,8 @@ summary::-webkit-details-marker { display: none; }
     line-height: 1.6;
 }
 
+.help-content p + p { margin-top: 8px; }
+
 .help-content ol {
     padding-left: 18px;
     line-height: 1.8;
@@ -1870,13 +1911,38 @@ summary::-webkit-details-marker { display: none; }
     background: rgba(255, 255, 255, .04);
 }
 
-[data-theme="dark"] .cm-s-idea span.cm-string { color: #7ee787; }
-[data-theme="dark"] .cm-s-idea span.cm-keyword { color: #d2a8ff; }
+/* The bundled "idea" theme is light-only: every token it leaves black or navy
+   needs a dark counterpart, or code such as parameters and operators vanishes. */
+[data-theme="dark"] .cm-s-idea span.cm-string,
+[data-theme="dark"] .cm-s-idea span.cm-string-2 { color: #7ee787; }
+[data-theme="dark"] .cm-s-idea span.cm-keyword,
+[data-theme="dark"] .cm-s-idea span.cm-atom,
+[data-theme="dark"] .cm-s-idea span.cm-tag { color: #d2a8ff; }
 [data-theme="dark"] .cm-s-idea span.cm-def,
 [data-theme="dark"] .cm-s-idea span.cm-variable,
-[data-theme="dark"] .cm-s-idea span.cm-property { color: #a5d6ff; }
-[data-theme="dark"] .cm-s-idea span.cm-comment { color: #8b949e; }
+[data-theme="dark"] .cm-s-idea span.cm-property,
+[data-theme="dark"] .cm-s-idea span.cm-attribute,
+[data-theme="dark"] .cm-s-idea span.cm-link { color: #a5d6ff; }
+[data-theme="dark"] .cm-s-idea span.cm-variable-2,
+[data-theme="dark"] .cm-s-idea span.cm-variable-3,
+[data-theme="dark"] .cm-s-idea span.cm-type,
+[data-theme="dark"] .cm-s-idea span.cm-operator { color: var(--text); }
+[data-theme="dark"] .cm-s-idea span.cm-comment,
+[data-theme="dark"] .cm-s-idea span.cm-meta,
+[data-theme="dark"] .cm-s-idea span.cm-qualifier,
+[data-theme="dark"] .cm-s-idea span.cm-bracket { color: #8b949e; }
 [data-theme="dark"] .cm-s-idea span.cm-number { color: #ff9b62; }
+[data-theme="dark"] .cm-s-idea span.cm-builtin { color: #ffa657; }
+[data-theme="dark"] .cm-s-idea span.cm-error { color: #ff7b72; }
+[data-theme="dark"] .cm-s-idea .CodeMirror-matchingbracket {
+    outline: 1px solid var(--border-strong);
+    color: var(--text) !important;
+}
+[data-theme="dark"] .CodeMirror-selected,
+[data-theme="dark"] .CodeMirror-focused .CodeMirror-selected,
+[data-theme="dark"] .CodeMirror-line::selection,
+[data-theme="dark"] .CodeMirror-line > span::selection,
+[data-theme="dark"] .CodeMirror-line > span > span::selection { background: var(--selection-bg); }
 
 #serial-logs.hide-time .log-entry, #serial-logs.no-time .log-entry {
     grid-template-columns: 42px minmax(0, 1fr);
@@ -1956,6 +2022,9 @@ summary::-webkit-details-marker { display: none; }
         justify-content: flex-end;
         padding: 0 10px;
     }
+    /* Stacked below the terminal, the panel opens downward: point the chevron
+       up to collapse and down to expand instead of sideways. */
+    .tools-panel .toggle-button > .bi { transform: rotate(-90deg); }
     .tools-panel .tab-content { min-height: 220px; }
     .quick-list {
         display: grid;
@@ -2026,6 +2095,18 @@ summary::-webkit-details-marker { display: none; }
         overflow: visible;
     }
     .connection-panel .sidebar-content:not(.show) { display: none; }
+    /* Collapsed in the single-column layout it is a full-width bar with its
+       title, not a 38px stub in the corner. */
+    .connection-panel:has(> .sidebar-content:not(.show)) {
+        width: 100%;
+        min-width: 0;
+    }
+    .connection-panel:has(> .sidebar-content:not(.show)) .panel-heading {
+        justify-content: space-between;
+        padding: 0 10px 0 14px;
+    }
+    .connection-panel:has(> .sidebar-content:not(.show)) .section-title { display: flex; }
+    .connection-panel .toggle-button > .bi { transform: rotate(90deg); }
     .port-section {
         padding: 10px;
         border-bottom: 1px solid var(--border);

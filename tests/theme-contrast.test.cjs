@@ -55,6 +55,7 @@ const semanticPairs = [
   ['warning', '--warning', '--warning-soft', 4.5],
   ['error', '--danger', '--danger-soft', 4.5],
 ];
+const ansiTokens = ['--ansi-black', '--ansi-red', '--ansi-green', '--ansi-yellow', '--ansi-blue', '--ansi-magenta', '--ansi-cyan', '--ansi-white'];
 
 for (const [theme, values] of Object.entries({ light, dark })) {
   test(`${theme} controls are neutral while device traffic and status retain semantic colors`, () => {
@@ -74,6 +75,13 @@ for (const [theme, values] of Object.entries({ light, dark })) {
     for (const [role, foreground, background, minimum] of semanticPairs) {
       const ratio = contrast(color(foreground), color(background));
       assert.ok(ratio >= minimum, `${theme} ${role}: ${ratio.toFixed(3)}:1 is below ${minimum}:1`);
+    }
+  });
+
+  test(`${theme} ANSI log colors stay legible on the terminal background`, () => {
+    for (const token of ansiTokens) {
+      const ratio = contrast(rgb(values[token]), rgb(values['--terminal-bg']));
+      assert.ok(ratio >= 4.5, `${theme} ${token}: ${ratio.toFixed(3)}:1 is below 4.5:1 on --terminal-bg`);
     }
   });
 
@@ -117,4 +125,8 @@ test('control styling and signal colors are wired separately, including Bootstra
   assert.match(block('.funsr-command-text'), /color:\s*var\(--text\)/);
   assert.match(block('.quick-item .quick-send'), /background:\s*var\(--surface\)/);
   assert.match(block('a:not(.btn):not(.skip-link)'), /text-decoration:\s*underline/);
+  for (const [index, token] of ansiTokens.entries()) {
+    assert.match(block(`.ansi-${index}`), new RegExp(`color:\\s*var\\(${token}\\)`), 'ANSI classes resolve through theme tokens');
+  }
+  assert.match(block('#serial-send-content.is-invalid, #serial-send-content.is-invalid:focus'), /border-color:\s*var\(--danger\)/);
 });

@@ -22,6 +22,8 @@
     const FUNSR_ACK_TIMEOUT = 8000
     const encoder = new TextEncoder()
     const supported = Boolean(window.isSecureContext && navigator.serial)
+    // Shortcut hints show the key that actually works: metaKey is accepted alongside ctrlKey.
+    const MODIFIER_KEY = /Mac|iPhone|iPad|iPod/i.test(navigator.userAgentData?.platform || navigator.platform || '') ? '⌘' : 'Ctrl'
     const hardwareFields = { baudRate: 'serial-baud', dataBits: 'serial-data-bits', stopBits: 'serial-stop-bits', parity: 'serial-parity', bufferSize: 'serial-buffer-size', flowControl: 'serial-flow-control' }
     const defaultQuick = [{ name: 'ESP32 · 상태 조회', list: [
         { name: 'AT 응답 확인', content: 'AT', hex: false },
@@ -148,7 +150,7 @@
             }
         }
         const theme = readStorage(THEME_KEY)
-        if (['light', 'dark'].includes(theme)) prefs.theme = theme
+        if (['system', 'light', 'dark'].includes(theme)) prefs.theme = theme
         decoder = U.createTextStreamDecoder(prefs.encoding)
     }
     function setPref(key, value) {
@@ -175,11 +177,13 @@
     function applyTheme() {
         const theme = ['light', 'dark'].includes(prefs.theme) ? prefs.theme : window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
         document.documentElement.dataset.theme = theme
+        // Keep the browser chrome on the --surface color of the active theme.
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#181818' : '#ffffff')
         if ($('serial-theme')) {
+            // The label names the action, so it is not an aria-pressed toggle.
             buttonLabel('serial-theme', '', theme === 'dark' ? 'bi-sun' : 'bi-moon')
             $('serial-theme').title = theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'
             $('serial-theme').setAttribute('aria-label', $('serial-theme').title)
-            $('serial-theme').setAttribute('aria-pressed', String(theme === 'dark'))
         }
     }
     function applyPreferences() {
@@ -209,7 +213,6 @@
         if ($('serial-open-or-close')) {
             $('serial-open-or-close').disabled = !supported || pending || !port
             buttonLabel('serial-open-or-close', busy ? '연결 처리 중…' : opened ? '연결 해제' : closeFailed ? '닫기 재시도' : '연결하기', opened ? 'bi-x-lg' : 'bi-plug')
-            $('serial-open-or-close').setAttribute('aria-pressed', String(opened))
         }
         for (const id of [...Object.values(hardwareFields), 'serial-preset']) if ($(id)) $(id).disabled = pending || opened || mayBeOpen
         if ($('serial-auto-reconnect')) $('serial-auto-reconnect').disabled = !supported
@@ -231,29 +234,43 @@
     function stripANSI(text) { return String(text).replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '') }
     function visibleText(text) { return String(text).replace(/\x00/g, '␀').replace(/\x1b/g, '␛') }
     function appendANSI(parent, text) {
-        // Interpret fixed SGR styles only. Never insert device-provided HTML,
-        // hyperlinks, OSC commands, URLs or arbitrary CSS into the document.
-        const palette = ['#7b8496', '#f87171', '#4ade80', '#facc15', '#60a5fa', '#c084fc', '#22d3ee', '#cbd5e1']
+        // Interpret fixed SGR styles only, as theme-aware classes (.ansi-0 to
+        // .ansi-7, .ansi-bold). Never insert device-provided HTML, hyperlinks,
+        // OSC commands, URLs or arbitrary CSS into the document.
         const clean = String(text).replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
         const regex = /\x1b\[([0-9;]*)m/g
-        let offset = 0, color = '', bold = false, match
+        let offset = 0, color = -1, bold = false, match
         const append = (part) => {
             if (!part) return
             const node = document.createElement('span')
             node.textContent = visibleText(stripANSI(part))
-            if (color) node.style.color = color
-            if (bold) node.style.fontWeight = '700'
+            if (color >= 0) node.classList.add('ansi-' + color)
+            if (bold) node.classList.add('ansi-bold')
             parent.appendChild(node)
         }
         while ((match = regex.exec(clean))) {
             append(clean.slice(offset, match.index))
-            for (const value of (match[1] || '0').split(';').map(Number)) {
-                if (value === 0) { color = ''; bold = false }
+            const codes = (match[1] || '0').split(';').map(Number)
+            for (let index = 0; index < codes.length; index++) {
+                const value = codes[index]
+                if (value === 0) { color = -1; bold = false }
                 else if (value === 1) bold = true
                 else if (value === 22) bold = false
-                else if (value === 39) color = ''
-                else if (value >= 30 && value <= 37) color = palette[value - 30]
-                else if (value >= 90 && value <= 97) color = palette[value - 90]
+                else if (value === 39) color = -1
+                else if (value >= 30 && value <= 37) color = value - 30
+                else if (value >= 90 && value <= 97) color = value - 90
+                else if (value === 38 || value === 48 || value === 58) {
+                    // Extended color: consume its parameters (5;n or 2;r;g;b) so
+                    // they are not mistaken for SGR codes. Only the 16 standard
+                    // foreground entries map onto the palette.
+                    const mode = codes[index + 1]
+                    if (value === 38) color = -1 // Unsupported foregrounds use default text, never a stale color.
+                    if (mode === 5) {
+                        const entry = codes[index + 2]
+                        if (value === 38 && Number.isInteger(entry) && entry >= 0 && entry <= 15) color = entry % 8
+                        index += 2
+                    } else if (mode === 2) index += 4
+                }
             }
             offset = regex.lastIndex
         }
@@ -337,7 +354,6 @@
         if ($('serial-auto-scroll')) { buttonLabel('serial-auto-scroll', prefs.autoScroll ? '자동 스크롤 켬' : '자동 스크롤 끔', 'bi-arrow-down'); $('serial-auto-scroll').setAttribute('aria-pressed', String(prefs.autoScroll)) }
         if ($('serial-pause')) {
             buttonLabel('serial-pause', paused ? '화면 재개' : '화면 일시정지', paused ? 'bi-play' : 'bi-pause')
-            $('serial-pause').setAttribute('aria-pressed', String(paused))
             $('serial-pause').title = paused ? '보관된 로그를 화면에 다시 표시합니다' : '수신은 계속하고 화면 표시만 잠시 멈춥니다'
         }
         logs.classList.toggle('is-paused', paused)
@@ -633,13 +649,15 @@
     }
     function composerRecord() { return sendRecord($('serial-send-content').value, $('serial-hex-send').checked, $('serial-line-ending').value) }
     function updateByteCount() {
-        const input = $('serial-send-content'), label = $('serial-byte-count')
+        const input = $('serial-send-content'), label = $('serial-byte-count'), note = document.querySelector('.encoding-note')
         if (!input || !label) return
+        const hex = Boolean($('serial-hex-send')?.checked)
+        if (note) note.textContent = hex ? 'HEX 전송: 원시 바이트' : '텍스트 전송: UTF-8'
         let invalid = false
         try {
             const record = input.value.length ? composerRecord() : null
             label.textContent = U.formatBytes(record?.bytes.length || 0)
-            label.title = record?.hex ? 'HEX 원시 바이트 · 줄 끝 문자를 추가하지 않습니다' : 'UTF-8 텍스트 · 선택한 줄 끝 문자 포함'
+            label.title = hex ? 'HEX 원시 바이트 · 줄 끝 문자를 추가하지 않습니다' : 'UTF-8 텍스트 · 선택한 줄 끝 문자 포함'
         } catch (error) { invalid = true; label.textContent = '입력 확인 필요'; label.title = errorText(error) }
         input.classList.toggle('is-invalid', invalid); input.setAttribute('aria-invalid', String(invalid)); updateSendButton()
     }
@@ -648,8 +666,8 @@
         if (!button) return
         const invalid = $('serial-send-content')?.getAttribute('aria-invalid') === 'true'
         button.disabled = !connected() || busy || selecting || sending || Boolean(funsrPending) || (invalid && !loopActive)
-        buttonLabel('serial-send', loopActive ? '반복 전송 중지' : sending ? '전송 중…' : '전송', loopActive ? 'bi-stop' : 'bi-arrow-up-right', loopActive || sending ? '' : 'Ctrl ↵')
-        button.title = loopActive ? '진행 중인 반복 전송을 멈춥니다' : 'Ctrl/Cmd + Enter로 전송'
+        buttonLabel('serial-send', loopActive ? '반복 전송 중지' : sending ? '전송 중…' : '전송', loopActive ? 'bi-stop' : 'bi-arrow-up-right', loopActive || sending ? '' : MODIFIER_KEY + ' ↵')
+        button.title = loopActive ? '진행 중인 반복 전송을 멈춥니다' : MODIFIER_KEY + ' + Enter로 전송'
         updateFunsr()
     }
     function remember(record) {
@@ -765,7 +783,8 @@
             const label = document.createElement('label'); label.className = 'quick-label'
             const hex = document.createElement('input'); hex.type = 'checkbox'; hex.className = 'form-check-input'; hex.checked = item.hex; hex.setAttribute('aria-label', item.name + ' 명령을 HEX로 전송')
             const labelText = document.createElement('span'); labelText.textContent = 'HEX'; label.append(hex, labelText)
-            row.append(remove, input, load, send, label); container.appendChild(row)
+            // DOM order follows the rendered grid so tab and reading order match.
+            row.append(send, label, load, remove, input); container.appendChild(row)
         })
         if ($('serial-quick-send-remove-group')) $('serial-quick-send-remove-group').disabled = groups.length <= 1
     }
@@ -856,7 +875,7 @@
         workerURL = null
         if (editor) { editor.setOption('readOnly', false); editor.getWrapperElement().classList.remove('CodeMirror-readonly') }
         else if ($('serial-code-content')) $('serial-code-content').readOnly = false
-        if ($('serial-code-run')) { buttonLabel('serial-code-run', '실행', 'bi-play'); $('serial-code-run').setAttribute('aria-pressed', 'false') }
+        if ($('serial-code-run')) buttonLabel('serial-code-run', '실행', 'bi-play')
         if ($('serial-code-load')) $('serial-code-load').disabled = false
         updateFunsr()
     }
@@ -909,7 +928,7 @@
             source.onmessageerror = () => { if (source === worker) { stopWorker(); systemLog('스크립트 메시지를 해석하지 못해 실행을 중지했습니다.') } }
             if (editor) { editor.setOption('readOnly', 'nocursor'); editor.getWrapperElement().classList.add('CodeMirror-readonly') }
             else $('serial-code-content').readOnly = true
-            buttonLabel('serial-code-run', '중지', 'bi-stop'); $('serial-code-run').setAttribute('aria-pressed', 'true')
+            buttonLabel('serial-code-run', '중지', 'bi-stop')
             if ($('serial-code-load')) $('serial-code-load').disabled = true
             systemLog('스크립트를 실행했습니다. 탭이 숨겨지면 브라우저가 타이머를 늦출 수 있습니다.')
             updateFunsr()
@@ -920,7 +939,7 @@
         if (value.history) { history = normalizedHistory(value.history); historyBlocked = false; writeStorage(HISTORY_KEY, JSON.stringify(history)) }
         configBlocked = false; reconnectArmed = false; resetFunsrSession()
         applyHardware(); applyPreferences(); resetDecoder(); renderQuick(); renderHistory(); trimLogs(); saveConfig()
-        writeStorage(THEME_KEY, document.documentElement.dataset.theme); renderSoon(true); updateConnection()
+        writeStorage(THEME_KEY, prefs.theme); renderSoon(true); updateConnection()
     }
 
     // Loading preferences never opens a port, starts a worker or starts a sender.
@@ -929,6 +948,11 @@
     for (const text of startupWarnings) systemLog(text)
     renderSoon(true)
     let counterTimer = setInterval(updateCounters, 1000)
+    const searchHint = document.querySelector('.search-field kbd')
+    if (searchHint) searchHint.textContent = MODIFIER_KEY + ' K'
+    if ($('serial-clear')) $('serial-clear').title = '로그 비우기 (' + MODIFIER_KEY + '+L)'
+    // Follow the OS theme while no explicit light/dark choice has been made.
+    window.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener?.('change', () => { if (!['light', 'dark'].includes(prefs.theme)) applyTheme() })
 
     on('serial-select-port', 'click', () => { void selectPort() })
     on('serial-open-or-close', 'click', () => {

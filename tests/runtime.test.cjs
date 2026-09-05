@@ -13,6 +13,7 @@ const { DEFAULT_SERIAL_OPTIONS, DEFAULT_TOOL_OPTIONS } = require('../js/serial-u
 const ROOT = path.resolve(__dirname, '..');
 const CONFIG_KEY = 'web-serial-debug-kr:config:v1';
 const HISTORY_KEY = 'web-serial-debug-kr:history:v1';
+const THEME_KEY = 'web-serial-debug-kr:theme';
 const encoder = new TextEncoder();
 const sleep = (milliseconds = 30) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -156,7 +157,7 @@ function installLibraryAdapters(window, calls) {
   };
 }
 
-async function runtime(t, { supported = true, secure = true, storage = {} } = {}) {
+async function runtime(t, { supported = true, secure = true, storage = {}, systemDark = false, blockedStorage = false } = {}) {
   const errors = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('jsdomError', (error) => errors.push(error));
@@ -187,7 +188,9 @@ async function runtime(t, { supported = true, secure = true, storage = {} } = {}
   // The app clones JSON-compatible settings. Keep clones in the window realm,
   // as the browser's structuredClone does, rather than leaking Node prototypes.
   window.structuredClone = (value) => window.JSON.parse(window.JSON.stringify(value));
-  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  const systemTheme = new window.EventTarget();
+  systemTheme.matches = systemDark;
+  window.matchMedia = () => systemTheme;
   window.alert = (message) => { calls.alerts.push(String(message)); };
   window.confirm = (message) => { calls.confirms.push(String(message)); return true; };
   window.Worker = class {
@@ -202,6 +205,9 @@ async function runtime(t, { supported = true, secure = true, storage = {} } = {}
   window.addEventListener('unhandledrejection', (event) => { errors.push(event.reason); event.preventDefault(); });
   installLibraryAdapters(window, calls);
   for (const [key, value] of Object.entries(storage)) window.localStorage.setItem(key, value);
+  if (blockedStorage) Object.defineProperty(window, 'localStorage', {
+    get() { throw new window.DOMException('Storage is blocked', 'SecurityError'); },
+  });
 
   const $ = (id) => {
     const element = window.document.getElementById(id);
@@ -210,6 +216,10 @@ async function runtime(t, { supported = true, secure = true, storage = {} } = {}
   };
   const env = {
     window, dom, $, serial, ports, port: ports[0], calls, workers, errors,
+    setSystemDark(value) {
+      systemTheme.matches = value;
+      systemTheme.dispatchEvent(new window.Event('change'));
+    },
     click(id, force = false) {
       if (force) $(id).dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
       else $(id).click();
@@ -240,6 +250,10 @@ async function runtime(t, { supported = true, secure = true, storage = {} } = {}
     window.close();
     assert.deepEqual(errors.map((error) => String(error?.stack || error)), [], 'No uncaught runtime or jsdom errors');
   });
+  // Execute the real pre-paint script too; outside-only fixtures otherwise skip it.
+  for (const script of window.document.querySelectorAll('script:not([src])')) window.eval(script.textContent);
+  env.initialTheme = window.document.documentElement.dataset.theme;
+  env.initialThemeColor = window.document.querySelector('meta[name="theme-color"]').content;
   window.eval(fs.readFileSync(path.join(ROOT, 'js/serial-utils.js'), 'utf8') + '\n//# sourceURL=serial-utils.js');
   window.eval(fs.readFileSync(path.join(ROOT, 'js/common.js'), 'utf8') + '\n//# sourceURL=common.js');
   await sleep(35);
@@ -261,6 +275,73 @@ async function send(env, content) {
   env.click('serial-send');
   await until(() => env.port.calls.write > previous, 'write attempted');
   await sleep(20);
+}
+
+function assertTheme(env, theme, initial = false) {
+  const color = theme === 'dark' ? '#181818' : '#ffffff';
+  assert.equal(env.window.document.documentElement.dataset.theme, theme);
+  assert.equal(env.window.document.querySelector('meta[name="theme-color"]').content, color);
+  assert.equal(env.$('serial-theme').getAttribute('aria-label'), theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환');
+  if (initial) {
+    assert.equal(env.initialTheme, theme, 'Pre-paint and runtime must choose the same theme');
+    assert.equal(env.initialThemeColor, color, 'Browser chrome must match before the app initializes');
+  }
+}
+
+test('blocked storage still uses the system theme before app initialization and follows later OS changes', async (t) => {
+  const env = await runtime(t, { systemDark: true, blockedStorage: true });
+  assertTheme(env, 'dark', true);
+  env.setSystemDark(false);
+  assertTheme(env, 'light');
+  env.setSystemDark(true);
+  assertTheme(env, 'dark');
+  assert.equal(env.calls.requestPort, 0);
+  assert.equal(env.port.calls.open, 0);
+});
+
+for (const scenario of [
+  { name: 'explicit theme overrides config', storage: { [THEME_KEY]: 'dark', [CONFIG_KEY]: savedConfig({ theme: 'light' }) }, theme: 'dark', followsSystem: false },
+  { name: 'config supplies a missing theme key', storage: { [CONFIG_KEY]: savedConfig({ theme: 'dark' }) }, theme: 'dark', followsSystem: false },
+  { name: 'system preference overrides stale config', storage: { [THEME_KEY]: 'system', [CONFIG_KEY]: savedConfig({ theme: 'dark' }) }, theme: 'light', followsSystem: true },
+  { name: 'corrupt config falls back to system', storage: { [CONFIG_KEY]: '{broken' }, theme: 'light', followsSystem: true },
+]) {
+  test(`pre-paint and runtime theme selection agree: ${scenario.name}`, async (t) => {
+    const env = await runtime(t, { storage: scenario.storage });
+    assertTheme(env, scenario.theme, true);
+    env.setSystemDark(true);
+    assertTheme(env, 'dark');
+    env.setSystemDark(false);
+    assertTheme(env, scenario.followsSystem ? 'light' : 'dark');
+    for (const [key, value] of Object.entries(scenario.storage)) assert.equal(env.window.localStorage.getItem(key), value, 'Following the OS must not rewrite user settings');
+  });
+}
+
+for (const action of ['reset', 'import']) {
+  test(`system theme survives ${action}, reload and later OS changes without being pinned to the current color`, async (t) => {
+    const env = await runtime(t, { storage: { [THEME_KEY]: 'dark', [CONFIG_KEY]: savedConfig({ theme: 'dark' }) } });
+    assertTheme(env, 'dark', true);
+    if (action === 'reset') env.click('serial-reset');
+    else {
+      env.file('serial-import-file', savedConfig({ theme: 'system', sendContent: '테마 가져오기' }));
+      await until(() => env.$('serial-send-content').value === '테마 가져오기', 'system-theme config imported');
+    }
+    assertTheme(env, 'light');
+    const storage = Object.fromEntries([CONFIG_KEY, THEME_KEY].map((key) => [key, env.window.localStorage.getItem(key)]));
+    assert.equal(JSON.parse(storage[CONFIG_KEY]).toolOptions.theme, 'system');
+    assert.equal(storage[THEME_KEY], 'system', 'Persist the preference, not the currently rendered light/dark color');
+    const reloaded = await runtime(t, { storage, systemDark: true });
+    assertTheme(reloaded, 'dark', true);
+    reloaded.setSystemDark(false);
+    assertTheme(reloaded, 'light');
+    reloaded.click('serial-theme');
+    assertTheme(reloaded, 'dark');
+    reloaded.setSystemDark(true);
+    reloaded.setSystemDark(false);
+    assertTheme(reloaded, 'dark');
+    assert.equal(reloaded.window.localStorage.getItem(THEME_KEY), 'dark', 'An explicit toggle still persists a fixed theme');
+    assert.equal(env.calls.requestPort + reloaded.calls.requestPort, 0);
+    assert.equal(env.port.calls.write + reloaded.port.calls.write, 0);
+  });
 }
 
 const funsrState = (env) => env.$('funsr-speed-status').dataset.state;
@@ -605,6 +686,42 @@ test('device markup and saved quick-command markup remain text rather than DOM e
   await until(() => env.rows('rx').length >= 2, 'ANSI packet displayed');
   assert.equal(env.$('serial-logs').querySelector('img,script,iframe'), null);
   assert.equal(env.window.serialTestExecuted, undefined);
+});
+
+test('ANSI colors render as theme classes and extended color parameters are not misread as basic codes', async (t) => {
+  const env = await runtime(t, { storage: { [CONFIG_KEY]: savedConfig({ timeOut: 0, logType: 'ansi' }) } });
+  await selectAndOpen(env);
+  env.port.receive(encoder.encode('\x1b[33mwarn\x1b[0m \x1b[38;5;33mext\x1b[0m \x1b[38;2;255;0;0mrgb\x1b[39m \x1b[1;92mok\x1b[22m plain\r\n'));
+  await until(() => env.texts('rx').includes('plain'), 'ANSI packet displayed');
+  const spans = [...env.$('serial-logs').querySelectorAll('.log-text span')];
+  const classes = (text) => {
+    const span = spans.find((candidate) => candidate.textContent.trim() === text);
+    assert.ok(span, `A span renders "${text}"`);
+    return [...span.classList].sort();
+  };
+  assert.deepEqual(classes('warn'), ['ansi-3']);
+  assert.deepEqual(classes('ext'), [], '256-color index 33 must not be read as basic yellow');
+  assert.deepEqual(classes('rgb'), [], 'truecolor parameters must not be read as SGR codes');
+  assert.deepEqual(classes('ok'), ['ansi-2', 'ansi-bold'], 'bright green maps onto the same palette slot');
+  assert.deepEqual(classes('plain'), ['ansi-2'], 'SGR 22 clears bold only; the color persists until 0 or 39');
+  assert.equal(env.$('serial-logs').querySelector('[style]'), null, 'ANSI rendering never writes inline styles');
+});
+
+test('unsupported ANSI foreground colors clear the prior color without changing bold or misreading background parameters', async (t) => {
+  const env = await runtime(t, { storage: { [CONFIG_KEY]: savedConfig({ timeOut: 0, logType: 'ansi' }) } });
+  await selectAndOpen(env);
+  env.port.receive(encoder.encode('\x1b[1;31mred\x1b[38;5;200mindexed\x1b[32mgreen\x1b[38;2;255;0;0mrgb\x1b[38;5;12mblue\x1b[48;2;31;0;22mbackground\x1b[58;5;31munderline\x1b[0mdone\r\n'));
+  await until(() => env.texts('rx').includes('done'), 'extended ANSI colors displayed');
+  const spans = [...env.$('serial-logs').querySelectorAll('.log-text span')];
+  for (const [text, expected] of Object.entries({
+    red: ['ansi-1', 'ansi-bold'], indexed: ['ansi-bold'], green: ['ansi-2', 'ansi-bold'], rgb: ['ansi-bold'],
+    blue: ['ansi-4', 'ansi-bold'], background: ['ansi-4', 'ansi-bold'], underline: ['ansi-4', 'ansi-bold'], done: [],
+  })) {
+    const span = spans.find((candidate) => candidate.textContent.trim() === text);
+    assert.ok(span, `A span renders "${text}"`);
+    assert.deepEqual([...span.classList].sort(), expected, text);
+  }
+  assert.equal(env.$('serial-logs').querySelector('[style]'), null);
 });
 
 test('an unrelated import cannot overwrite existing settings or start a script or write', async (t) => {

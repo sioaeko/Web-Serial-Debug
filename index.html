@@ -5,9 +5,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#f3f3f3">
+    <meta name="theme-color" content="#ffffff">
     <meta name="description" content="설치 없이 브라우저에서 사용하는 한국어 웹 시리얼 디버거. Arduino, ESP32, USB-UART 연결, 한글 로그, HEX 전송, 명령 모음을 지원합니다.">
     <title>Web Serial Debug</title>
+    <script>
+        // Apply the saved or system theme before the first paint so dark-mode
+        // users do not see a light flash. common.js owns the theme afterwards.
+        (function () {
+            var theme
+            try {
+                theme = localStorage.getItem('web-serial-debug-kr:theme')
+                if (theme !== 'light' && theme !== 'dark' && theme !== 'system') {
+                    try {
+                        var config = JSON.parse(localStorage.getItem('web-serial-debug-kr:config:v1'))
+                        theme = config && config.toolOptions && config.toolOptions.theme
+                    } catch (_) { theme = null /* Unreadable settings fall back to the system theme, as the app does. */ }
+                }
+            } catch (_) { /* Blocked storage must not prevent the system fallback. */ }
+            if (theme !== 'light' && theme !== 'dark') {
+                theme = 'light'
+                try { if (window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark' } catch (_) { /* Keep the static light default. */ }
+            }
+            document.documentElement.dataset.theme = theme
+            document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#181818' : '#ffffff'
+        })()
+    </script>
     <link rel="icon" href="imgs/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css">
     <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.css">
@@ -24,7 +46,7 @@
         </div>
         <nav class="header-actions" aria-label="앱 메뉴">
             <button class="btn btn-quiet icon-button" type="button" data-bs-toggle="modal" data-bs-target="#model-help" title="사용 안내 및 단축키" aria-label="사용 안내 및 단축키"><i class="bi bi-question-circle" aria-hidden="true"></i></button>
-            <button class="btn btn-quiet icon-button" type="button" id="serial-theme" title="어두운 테마로 변경" aria-label="어두운 테마로 변경"><i class="bi bi-moon" aria-hidden="true"></i></button>
+            <button class="btn btn-quiet icon-button" type="button" id="serial-theme" title="다크 모드로 전환" aria-label="다크 모드로 전환"><i class="bi bi-moon" aria-hidden="true"></i></button>
             <a class="btn btn-quiet github-link" href="https://github.com/sioaeko/Web-Serial-Debug-KR" target="_blank" rel="noopener noreferrer" aria-label="GitHub 소스 코드 (새 탭)"><i class="bi bi-github" aria-hidden="true"></i><span>GitHub</span><i class="bi bi-arrow-up-right external-arrow" aria-hidden="true"></i></a>
         </nav>
     </header>
@@ -33,9 +55,9 @@
         <aside id="serial-options" class="sidebar connection-panel" aria-labelledby="connection-heading">
             <div class="panel-heading">
                 <div class="section-title"><i class="bi bi-usb-symbol" aria-hidden="true"></i><h2 id="connection-heading">연결 설정</h2></div>
-                <button class="toggle-button icon-button" type="button" title="연결 설정 접기 또는 펼치기" aria-label="연결 설정 접기 또는 펼치기"><i class="bi bi-chevron-compact-left" aria-hidden="true"></i></button>
+                <button class="toggle-button icon-button" type="button" title="연결 설정 접기 또는 펼치기" aria-label="연결 설정 접기 또는 펼치기" aria-expanded="true" aria-controls="serial-options-content"><i class="bi bi-chevron-compact-left" aria-hidden="true"></i></button>
             </div>
-            <div class="collapse show sidebar-content">
+            <div class="collapse show sidebar-content" id="serial-options-content">
                 <section class="port-section" aria-label="장치 선택">
                     <div class="small-label">시리얼 포트</div>
                     <div class="port-status"><span class="status-dot" aria-hidden="true"></span><span id="serial-connection-label">연결 안 됨</span></div>
@@ -97,8 +119,8 @@
                 <div class="terminal-body">
                     <div id="serial-logs" role="log" aria-label="시리얼 송수신 로그" aria-live="off" tabindex="0"></div>
                     <div id="serial-empty-state" class="empty-state">
-                        <h3 data-empty-title>수신 대기 중</h3>
-                        <p data-empty-description>장치를 연결하면 송수신 로그가 여기에 표시됩니다.</p>
+                        <h3 data-empty-title>아직 수신한 데이터가 없습니다</h3>
+                        <p data-empty-description>포트를 선택하고 장치에 맞는 설정으로 연결해 주세요.</p>
                     </div>
                 </div>
                 <div class="log-statusbar">
@@ -121,9 +143,9 @@
         <aside id="serial-tools" class="sidebar tools-panel" aria-label="명령 모음 및 도구">
             <div class="panel-heading tools-heading">
                 <nav class="tool-tabs" aria-label="작업 도구 탭"><div class="nav nav-tabs" id="nav-tab" role="tablist"><button class="nav-link active" id="nav-funsr-tab" data-bs-toggle="tab" data-bs-target="#nav-funsr" type="button" role="tab" aria-controls="nav-funsr" aria-selected="true">속도</button><button class="nav-link" id="nav-quick-send-tab" data-bs-toggle="tab" data-bs-target="#nav-quick-send" type="button" role="tab" aria-controls="nav-quick-send" aria-selected="false" tabindex="-1">명령 모음</button><button class="nav-link" id="nav-options-tab" data-bs-toggle="tab" data-bs-target="#nav-options" type="button" role="tab" aria-controls="nav-options" aria-selected="false" tabindex="-1">설정</button><button class="nav-link" id="nav-code-tab" data-bs-toggle="tab" data-bs-target="#nav-code" type="button" role="tab" aria-controls="nav-code" aria-selected="false" tabindex="-1">스크립트</button></div></nav>
-                <button class="toggle-button icon-button" type="button" title="작업 도구 접기 또는 펼치기" aria-label="작업 도구 접기 또는 펼치기"><i class="bi bi-chevron-compact-right" aria-hidden="true"></i></button>
+                <button class="toggle-button icon-button" type="button" title="작업 도구 접기 또는 펼치기" aria-label="작업 도구 접기 또는 펼치기" aria-expanded="true" aria-controls="serial-tools-content"><i class="bi bi-chevron-compact-right" aria-hidden="true"></i></button>
             </div>
-            <div class="collapse show sidebar-content">
+            <div class="collapse show sidebar-content" id="serial-tools-content">
                 <div class="tab-content" id="nav-tabContent">
                     <section class="tab-pane fade show active" id="nav-funsr" role="tabpanel" aria-labelledby="nav-funsr-tab" tabindex="0">
                         <h3 class="tool-section-title">FUNSR PRO 속도 설정</h3>
